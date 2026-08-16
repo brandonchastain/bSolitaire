@@ -5,36 +5,100 @@ namespace BSolitaire.Game;
 /// </summary>
 public class Board
 {
-    public List<Card> FaceDownPile { get; } = new();
+    private const int NumFoundationPiles = 4;
+    private const int NumTableauPiles = 7;
+
+    public List<Card> FaceDownPile { get; } = BuildDefaultDeck();
     public List<Card> FaceUpPile { get; } = new();
-    public List<Card>[] FoundationPiles { get; } = new List<Card>[4]; // Index 0: Clubs, 1: Diamonds, 2: Hearts, 3: Spades
-    public List<Card>[] TableauPiles { get; } = new List<Card>[7]; // Index 0-6: Tableau piles
-}
+    public List<Card>[] FoundationPiles { get; } = new List<Card>[NumFoundationPiles]; // Index 0: Clubs, 1: Diamonds, 2: Hearts, 3: Spades
+    public List<Card>[] TableauPiles { get; } = new List<Card>[NumTableauPiles]; // Index 0-6: Tableau piles
 
-public enum PileKind
-{
-    FaceDown,
-    FaceUp,
-    Foundation,
-    Tableau
-}
-
-public readonly record struct Location(PileKind Kind, int PileIndex);
-
-public readonly record struct Move(Location From, Location To, int Count);
-
-public static class Rules
-{
-    public static bool CanStack(Card moving, Card onto)
+    public Board()
     {
-        // alternating color, descending rank
+        for (int i = 0; i < NumFoundationPiles; i++)
+        {
+            FoundationPiles[i] = new List<Card>();
+        }
+
+        for (int i = 0; i < NumTableauPiles; i++)
+        {
+            TableauPiles[i] = new List<Card>();
+        }
+
+        this.Deal();
     }
 
-    public static bool CanFound(Card moving, Card onto)
+    public void MakeMove(Move move)
     {
-        
+        var from = move.From.Kind switch
+        {
+            PileKind.FaceDown => FaceDownPile,
+            PileKind.FaceUp => FaceUpPile,
+            PileKind.Foundation => FoundationPiles[move.From.PileIndex],
+            PileKind.Tableau => TableauPiles[move.From.PileIndex],
+            _ => throw new ArgumentOutOfRangeException(nameof(move.From.Kind), move.From.Kind, null)
+        };
+
+        var to = move.To.Kind switch
+        {
+            PileKind.FaceDown => FaceDownPile,
+            PileKind.FaceUp => FaceUpPile,
+            PileKind.Foundation => FoundationPiles[move.To.PileIndex],
+            PileKind.Tableau => TableauPiles[move.To.PileIndex],
+            _ => throw new ArgumentOutOfRangeException(nameof(move.To.Kind), move.To.Kind, null)
+        };
+
+        if (Rules.IsLegal(this, move))
+        {
+            var card = from[^1];
+            from.RemoveAt(from.Count - 1);
+            to.Add(card);
+        }
     }
 
-    public static bool IsLegal(Board board, Move move);
-    public static IEnumerable<Move> LegalMoves(Board board);
+    /// <summary>
+    /// Deal cards from facedown into tableau piles. The first pile gets 1 card, the second gets 2, and so on, up to the seventh pile which gets 7 cards. The top card of each tableau pile is turned face up.
+    /// Dealing must happen in order of tableau piles, one card at a time, from the top of the facedown pile.
+    /// </summary>
+    private void Deal()
+    {
+        // Deal left-to-right, adding one more card to each tableau pile than the previous one.
+        // Each new card is taken from the top of the stock and placed on the current pile,
+        // so the last card dealt to a pile is the one on top.
+        for (int row = 0; row < NumTableauPiles; row++)
+        {
+            for (int pileIndex = row; pileIndex < NumTableauPiles; pileIndex++)
+            {
+                var card = FaceDownPile[^1];
+                FaceDownPile.RemoveAt(FaceDownPile.Count - 1);
+                TableauPiles[pileIndex].Add(card);
+
+                
+            }
+        }
+    }
+
+    private static List<Card> BuildDefaultDeck()
+    {
+        var deck = new List<Card>();
+        foreach (Suit suit in Enum.GetValues<Suit>())
+        {
+            foreach (Rank rank in Enum.GetValues<Rank>())
+            {
+                deck.Add(new Card(suit, rank));
+            }
+        }
+
+        // shuffle the deck
+        var rng = new Random();
+        int n = deck.Count;
+        while (n > 1)
+        {
+            n--;
+            int k = rng.Next(n + 1);
+            (deck[k], deck[n]) = (deck[n], deck[k]);
+        }
+
+        return deck;
+    }
 }

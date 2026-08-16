@@ -6,20 +6,21 @@ namespace BSolitaire.Game;
 /// </summary>
 public class Solitaire
 {
-    public Stack<Board> boardHistory = new(); // top is current board
+    public Board Board { get; } = new();
+    public BoardLayout Layout { get; } = new BoardLayout(800, 600, 80, 120);
 
-    /// <summary>Board size in CSS pixels. Updated whenever the window resizes.</summary>
-    public double Width { get; private set; }
+    private Card? selectedCard = null;
 
-    public double Height { get; private set; }
+    public Solitaire()
+    {
+    }
 
     /// <summary>Time since the game started. Set by <see cref="Update"/>.</summary>
     public TimeSpan Elapsed { get; private set; }
 
     public void Resize(double width, double height)
     {
-        Width = width;
-        Height = height;
+        Layout.Resize(width, height);
     }
 
     /// <summary>Called once per animation frame, before the drawer runs.</summary>
@@ -31,6 +32,31 @@ public class Solitaire
     /// <summary>A click/tap at (x, y) in CSS pixels, origin at the top-left of the board.</summary>
     public void OnClick(double x, double y)
     {
+        if (Layout.TryHitTest(Board, x, y, out Location loc, out int indexInPile))
+        {
+            if (loc.Kind == PileKind.FaceDown && Board.FaceDownPile.Count > 0)
+            {
+                // move the top card from facedown to faceup
+                var dest = new Location(PileKind.FaceUp, -1);
+                var move = new Move(loc, dest, 1);
+
+                Board.MakeMove(new Move(loc, dest, 1));
+            }
+            else if (loc.Kind == PileKind.FaceUp && indexInPile == Board.FaceUpPile.Count - 1)
+            {
+                // select the top card of the faceup pile
+                selectedCard = Board.FaceUpPile[indexInPile];
+            }
+            else if (selectedCard != null)
+            {
+                // try to move the selected card to the clicked location
+                var dest = loc;
+                var move = new Move(new Location(PileKind.FaceUp, -1), dest, 1);
+
+                Board.MakeMove(move);
+                selectedCard = null;
+            }
+        }
     }
 
     /// <summary>A key press, using KeyboardEvent.code values ("KeyR", "Space", "ArrowLeft"...).</summary>
