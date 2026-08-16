@@ -1,0 +1,62 @@
+@page "/"
+@implements IDisposable
+@inject IJSRuntime JS
+@inject ILogger<Home> Logger
+
+<div id="board" tabindex="0" @onclick="HandleClick" @onkeydown="HandleKeyDown" @onkeydown:preventDefault="true">
+    <BECanvas @ref="canvasRef" />
+</div>
+
+@code {
+    // The host component owns the plumbing: it wires the JS animation frame
+    // loop and browser events to the game, and nothing else.
+    private readonly Solitaire game = new();
+
+    private BECanvasComponent canvasRef = default!;
+    private IGameDrawer? drawer;
+    private DotNetObjectReference<Home>? selfRef;
+    private bool faulted;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        drawer = new CanvasDrawer(await canvasRef.CreateCanvas2DAsync());
+        selfRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("bSolitaire.start", selfRef);
+    }
+
+    [JSInvokable]
+    public void OnResize(double width, double height) => game.Resize(width, height);
+
+    [JSInvokable]
+    public async Task OnFrame(double timestampMs)
+    {
+        if (faulted || drawer is null)
+        {
+            return;
+        }
+
+        try
+        {
+            game.Update(TimeSpan.FromMilliseconds(timestampMs));
+            await drawer.Draw(game);
+        }
+        catch (Exception ex)
+        {
+            // Stop the loop on the first fault so the console isn't flooded
+            // with one copy of the same exception per frame.
+            faulted = true;
+            Logger.LogError(ex, "Game loop faulted");
+        }
+    }
+
+    private void HandleClick(MouseEventArgs e) => game.OnClick(e.OffsetX, e.OffsetY);
+
+    private void HandleKeyDown(KeyboardEventArgs e) => game.OnKeyDown(e.Code);
+
+    public void Dispose() => selfRef?.Dispose();
+}
