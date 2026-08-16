@@ -6,6 +6,8 @@ namespace BSolitaire.Game;
 /// </summary>
 public class Solitaire
 {
+    public Stack<Board> boardHistory = new(); // top is current board
+
     /// <summary>Board size in CSS pixels. Updated whenever the window resizes.</summary>
     public double Width { get; private set; }
 
