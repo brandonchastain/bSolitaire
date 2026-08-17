@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Blazor.Extensions.Canvas.Canvas2D;
 
 namespace BSolitaire.Game;
@@ -116,6 +116,11 @@ public class CanvasDrawer : IGameDrawer
             await ctx.SetShadowOffsetYAsync(0);
         }
 
+        if (game.State != GameState.Playing)
+        {
+            await DrawBanner(layout, game.State);
+        }
+
         if (game.Error != null)
         {
             await Fill("#ff0000");
@@ -125,7 +130,7 @@ public class CanvasDrawer : IGameDrawer
 
         if (game.ShowStats)
         {
-            await DrawStats(layout);
+            await DrawStats(layout, game.Analysis, game.AnalysisNodes);
         }
 
         await ctx.EndBatchAsync();
@@ -136,11 +141,59 @@ public class CanvasDrawer : IGameDrawer
     }
 
     /// <summary>
+    /// The end-of-game panel: what happened, and the button that deals again. Both rects come
+    /// from the layout, which is also what the hit test reads, so the button can't drift away
+    /// from the thing you click.
+    /// </summary>
+    private async ValueTask DrawBanner(BoardLayout layout, GameState state)
+    {
+        var panel = layout.Banner;
+        var button = layout.NewGameButton;
+
+        // Dim the board so the panel reads as being in front of it rather than part of it.
+        await Fill("rgba(0, 0, 0, 0.45)");
+        await ctx.FillRectAsync(0, 0, layout.Width, layout.Height);
+
+        await Fill("#12351f");
+        await ctx.FillRectAsync(panel.X, panel.Y, panel.W, panel.H);
+        await Stroke("#e8f0e8");
+        await ctx.StrokeRectAsync(panel.X, panel.Y, panel.W, panel.H);
+
+        // The two ways of losing are different claims and are worth wording differently:
+        // one is "nothing can move", the other is "moves remain but none of them wins".
+        (string headline, string detail) = state switch
+        {
+            GameState.Won => ("You win!", "All 52 cards are home."),
+            GameState.Stuck => ("No moves left", "Nothing on the board can move."),
+            _ => ("This deal is lost", "No line from here wins."),
+        };
+
+        await Fill("#e8f0e8");
+        await Font($"bold {panel.H * 0.19:F0}px sans-serif");
+        await Align("center");
+        await ctx.FillTextAsync(headline, panel.X + panel.W / 2, panel.Y + panel.H * 0.3);
+
+        await Font($"{panel.H * 0.12:F0}px sans-serif");
+        await ctx.FillTextAsync(detail, panel.X + panel.W / 2, panel.Y + panel.H * 0.46);
+
+        await Fill("#0b6b3a");
+        await ctx.FillRectAsync(button.X, button.Y, button.W, button.H);
+        await ctx.StrokeRectAsync(button.X, button.Y, button.W, button.H);
+
+        await Fill("#ffffff");
+        await Font($"bold {button.H * 0.42:F0}px sans-serif");
+        await ctx.FillTextAsync(
+            "New Game",
+            button.X + button.W / 2,
+            button.Y + button.H * 0.68);
+    }
+
+    /// <summary>
     /// Draw time and draws per second. Draws per second is not frame rate — the host
     /// skips drawing when nothing changed, so it reads zero on an idle board and only
     /// means anything while something is moving.
     /// </summary>
-    private async ValueTask DrawStats(BoardLayout layout)
+    private async ValueTask DrawStats(BoardLayout layout, SolveResult analysis, int nodes)
     {
         double now = clock.Elapsed.TotalMilliseconds;
         while (recentDraws.Count > 0 && now - recentDraws.Peek() > 1000)
@@ -154,7 +207,10 @@ public class CanvasDrawer : IGameDrawer
         await Fill("#e8f0e8");
         await Font("bold 14px monospace");
         await Align("left");
-        await ctx.FillTextAsync($"{lastDrawMs,5:F1} ms   {recentDraws.Count,3} draws/s", 8, layout.Height - 8);
+        await ctx.FillTextAsync(
+            $"{lastDrawMs,5:F1} ms   {recentDraws.Count,3} draws/s   search {analysis} {nodes,7:N0}",
+            8,
+            layout.Height - 8);
     }
 
     private async ValueTask DrawCard(Card card, Rect rect)

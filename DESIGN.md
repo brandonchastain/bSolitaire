@@ -247,7 +247,7 @@ Game/
   Card.cs          Suit, Rank, Card
   Location.cs      PileKind, Location, Move
   Board.cs         piles, Deal(seed), Apply(Move), Clone()
-  Rules.cs         CanStack, CanFound, IsLegal, LegalMoves
+  Rules.cs         CanStack, CanFound, IsLegal, LegalMoves, IsStuck
   BoardLayout.cs   Rect, CardRect, EmptySlot, TryHitTest
   Solitaire.cs     session: board + layout + drag + undo + animation
   IGameDrawer.cs   (unchanged)

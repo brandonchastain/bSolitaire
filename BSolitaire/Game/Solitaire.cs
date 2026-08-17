@@ -1,4 +1,4 @@
-namespace BSolitaire.Game;
+﻿namespace BSolitaire.Game;
 
 /// <summary>
 /// One game session, and the only object the host component and the drawer talk to.
@@ -11,6 +11,9 @@ namespace BSolitaire.Game;
 public class Solitaire
 {
     private readonly PointerInput input;
+
+    private Solver? solver;
+    private int analysedVersion = -1;
 
     public Solitaire()
     {
@@ -26,6 +29,9 @@ public class Solitaire
 
     /// <summary>The stack currently held by the pointer, or null.</summary>
     public DragState? Drag => input.Drag;
+
+    /// <summary>Whether the game is still going, and if not, how it ended.</summary>
+    public GameState State => Board.State;
 
     /// <summary>Last unhandled exception, painted on the board. Null when all is well.</summary>
     public string? Error { get; private set; }
@@ -48,8 +54,53 @@ public class Solitaire
 
     public void Resize(double width, double height) => Guarded(() => Layout.Resize(width, height));
 
-    /// <summary>Called once per animation frame, before the drawer runs.</summary>
-    public void Update(TimeSpan elapsed) => Elapsed = elapsed;
+    /// <summary>
+    /// Positions examined per frame. Big enough that a whole budget is spent in a second or
+    /// two of idle time — the answer is wanted while the player is still looking at the move
+    /// that caused it — and small enough to disappear into a frame on a phone. A dropped frame
+    /// mid-drag would be far more obvious than a verdict arriving a moment later.
+    /// </summary>
+    private const int SearchSlice = 8000;
+
+    /// <summary>How the search on the current position is going. Null before it starts.</summary>
+    public SolveResult Analysis => solver?.Result ?? SolveResult.Searching;
+
+    /// <summary>Positions the search has examined on the current board.</summary>
+    public int AnalysisNodes => solver?.Nodes ?? 0;
+
+    /// <summary>Distinct positions the search is holding on to.</summary>
+    public int AnalysisStates => solver?.States ?? 0;
+
+    /// <summary>
+    /// Called once per animation frame, before the drawer runs. This is where the search gets
+    /// its time: a slice per frame, spread over however many frames it takes, so proving a
+    /// deal dead costs the player nothing they can feel. The board is idle between moves
+    /// anyway — the frame loop is already running and drawing nothing.
+    /// </summary>
+    public void Update(TimeSpan elapsed)
+    {
+        Elapsed = elapsed;
+
+        // A move invalidates whatever the search was working on; start again on the new
+        // position. Restarting rather than repairing is the honest thing: a move can turn a
+        // lost position into a won one and vice versa.
+        if (analysedVersion != Board.Version)
+        {
+            analysedVersion = Board.Version;
+            solver = Board.State == GameState.Playing ? new Solver(Board) : null;
+        }
+
+        if (solver == null || solver.Done)
+        {
+            return;
+        }
+
+        if (solver.Step(SearchSlice) && solver.Result == SolveResult.Unwinnable)
+        {
+            Board.MarkUnwinnable();
+            NeedsRedraw = true;
+        }
+    }
 
     public void OnPointerDown(double x, double y) => Guarded(() => input.Down(x, y));
 
@@ -81,11 +132,14 @@ public class Solitaire
             ShowStats = !ShowStats;
             NeedsRedraw = true;
         }
+        else if (code == "KeyR")
+        {
+            Reset();
+        }
     }
 
-    public void Reset()
-    {
-    }
+    /// <summary>Abandons the current game and deals a new one.</summary>
+    public void Reset() => Guarded(Board.Reset);
 
     /// <summary>
     /// Every input entry point funnels through here, so the error boundary and the redraw
