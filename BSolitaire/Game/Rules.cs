@@ -109,6 +109,14 @@ public static class Rules
                 return false;
             }
 
+            // A card on a foundation is already home. The only such move the ranks allow is
+            // an ace sliding to another empty foundation, which changes nothing except which
+            // foundation is empty — and left legal it reads as a way out of a dead board.
+            if (move.From.Kind == PileKind.Foundation)
+            {
+                return false;
+            }
+
             if (to.Count == 0)
             {
                 return CanFound(from[^1], null);
@@ -132,11 +140,13 @@ public static class Rules
     }
 
     /// <summary>
-    /// Every legal move available right now, candidates filtered through
-    /// <see cref="IsLegal"/> so the rules live in exactly one place. Turning the stock is
-    /// included; recycling the waste is not, since it is not expressed as a move.
+    /// The moves a player could pick from right now. Generated candidates are filtered
+    /// through <see cref="IsLegal"/>, so everything yielded here is legal and the rules stay
+    /// in one place. Turning the stock is included; recycling the waste is not, since it is
+    /// not expressed as a move. Whether a move is any *use* is not asked here — see
+    /// <see cref="IsStuck"/>.
     /// </summary>
-    public static IEnumerable<Move> LegalMoves(Board board)
+    public static IEnumerable<Move> CandidateMoves(Board board)
     {
         if (board.FaceDownPile.Count > 0)
         {
@@ -186,7 +196,7 @@ public static class Rules
     /// </summary>
     public static bool IsStuck(Board board)
     {
-        foreach (var move in LegalMoves(board))
+        foreach (var move in CandidateMoves(board))
         {
             if (IsProgress(board, move))
             {
