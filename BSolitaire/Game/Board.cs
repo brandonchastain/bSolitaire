@@ -28,7 +28,7 @@ public class Board
         this.Deal();
     }
 
-    public void MakeMove(Move move)
+    public bool MakeMove(Move move)
     {
         var from = move.From.Kind switch
         {
@@ -50,10 +50,32 @@ public class Board
 
         if (Rules.IsLegal(this, move))
         {
-            var card = from[^1];
-            from.RemoveAt(from.Count - 1);
-            to.Add(card);
+            // move the cards (could be multiple) from from to to.
+            // do not reverse the order of cards, preserve order.
+            var cardsToMove = from.GetRange(from.Count - move.Count, move.Count);
+            from.RemoveRange(from.Count - move.Count, move.Count);
+            to.AddRange(cardsToMove);
         }
+        else
+        {
+            return false;
+        }
+
+        if (move.From.Kind == PileKind.FaceDown && move.To.Kind == PileKind.FaceUp)
+        {
+            var topCard = FaceUpPile[^1];
+            topCard.Flip();
+        }
+        else if (move.From.Kind == PileKind.Tableau && TableauPiles[move.From.PileIndex].Count > 0)
+        {
+            var topCard = TableauPiles[move.From.PileIndex][^1];
+            if (!topCard.IsFaceUp)
+            {
+                topCard.Flip();
+            }
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -73,7 +95,10 @@ public class Board
                 FaceDownPile.RemoveAt(FaceDownPile.Count - 1);
                 TableauPiles[pileIndex].Add(card);
 
-                
+                if (pileIndex == row)
+                {
+                    card.Flip();
+                }
             }
         }
     }

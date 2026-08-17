@@ -8,8 +8,11 @@ public class Solitaire
 {
     public Board Board { get; } = new();
     public BoardLayout Layout { get; } = new BoardLayout(800, 600, 80, 120);
+    public string? Error { get; private set; } = null;
 
     private Card? selectedCard = null;
+    private Location? selectedCardLocation = null;
+    private int selectedCardCount = 0;
 
     public Solitaire()
     {
@@ -32,30 +35,79 @@ public class Solitaire
     /// <summary>A click/tap at (x, y) in CSS pixels, origin at the top-left of the board.</summary>
     public void OnClick(double x, double y)
     {
-        if (Layout.TryHitTest(Board, x, y, out Location loc, out int indexInPile))
+        try
         {
-            if (loc.Kind == PileKind.FaceDown && Board.FaceDownPile.Count > 0)
+            if (Layout.TryHitTest(Board, x, y, out Location loc, out int indexInPile))
             {
-                // move the top card from facedown to faceup
-                var dest = new Location(PileKind.FaceUp, -1);
-                var move = new Move(loc, dest, 1);
+                //Error = $"{loc.Kind}[{loc.PileIndex}] index {indexInPile}";
+                if (loc.Kind == PileKind.FaceDown)
+                {   
+                    if (Board.FaceDownPile.Count > 0)
+                    {
+                        // move the top card from facedown to faceup
+                        var dest = new Location(PileKind.FaceUp, 0);
+                        Board.MakeMove(new Move(loc, dest, 1));
 
-                Board.MakeMove(new Move(loc, dest, 1));
-            }
-            else if (loc.Kind == PileKind.FaceUp && indexInPile == Board.FaceUpPile.Count - 1)
-            {
-                // select the top card of the faceup pile
-                selectedCard = Board.FaceUpPile[indexInPile];
-            }
-            else if (selectedCard != null)
-            {
-                // try to move the selected card to the clicked location
-                var dest = loc;
-                var move = new Move(new Location(PileKind.FaceUp, -1), dest, 1);
+                        selectedCard = null;
+                        selectedCardLocation = null;
+                        selectedCardCount = 0;
+                    }
+                    else
+                    {
+                        // copy all cards from FaceUp to FaceDown and flip them over
+                        // don't use Board.MakeMove
+                        Board.FaceDownPile.AddRange(Board.FaceUpPile);
+                        Board.FaceDownPile.Reverse();
+                        Board.FaceUpPile.Clear();
+                        // flip over the cards 
+                        foreach (var card in Board.FaceDownPile)
+                        {
+                            card.Flip();
+                        }
+                        
+                        selectedCard = null;
+                        selectedCardLocation = null;
+                        selectedCardCount = 0;
+                    }
+                }
+                else if (selectedCard == null && loc.Kind == PileKind.FaceUp && indexInPile == Board.FaceUpPile.Count - 1)
+                {
+                    selectedCard = Board.FaceUpPile[indexInPile];
+                    selectedCardLocation = loc;
+                    selectedCardCount = 1;  
+                }
+                else if (selectedCard == null && loc.Kind == PileKind.Tableau)
+                {
+                    var pile = Board.TableauPiles[loc.PileIndex];
+                    selectedCard = pile[indexInPile];
+                    selectedCardLocation = loc;
+                    selectedCardCount = pile.Count - indexInPile;
+                }
+                else if (selectedCard != null && loc.Kind != PileKind.FaceUp && loc.Kind != PileKind.FaceDown)
+                {
+                    // try to move the selected card to the clicked location
+                    var dest = loc;
+                    var move = new Move(selectedCardLocation!.Value, dest, selectedCardCount);
 
-                Board.MakeMove(move);
+                    Board.MakeMove(move);
+                    selectedCard = null;
+                    selectedCardLocation = null;
+                    selectedCardCount = 0;
+                }
+            }
+            else
+            {
+                // click on empty space, deselect any selected card
                 selectedCard = null;
+                selectedCardLocation = null;
+                selectedCardCount = 0;
             }
+            
+            Error = null;
+        }
+        catch (Exception ex)
+        {
+            Error = ex.ToString();
         }
     }
 

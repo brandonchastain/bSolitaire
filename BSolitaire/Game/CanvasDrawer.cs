@@ -42,6 +42,16 @@ public class CanvasDrawer : IGameDrawer
             for (int pileIndex = 0; pileIndex < piles.Length; pileIndex++)
             {
                 var pile = piles[pileIndex];
+                
+                if (pile.Count == 0)
+                {
+                    // draw empty slot
+                    var spot = layout.EmptySlot(new Location(kind, pileIndex));
+                    await ctx.SetStrokeStyleAsync("#ffffff");
+                    await ctx.StrokeRectAsync(spot.X, spot.Y, spot.W, spot.H);
+                    continue;
+                }
+
                 for (int indexInPile = 0; indexInPile < pile.Count; indexInPile++)
                 {
                     // draw card
@@ -49,10 +59,12 @@ public class CanvasDrawer : IGameDrawer
 
                     // get card rect (xywh coords)
                     var rect = layout.CardRect(new Location(kind, pileIndex), indexInPile);
+                    await ctx.SetStrokeStyleAsync("#000000");
+                    await ctx.StrokeRectAsync(rect.X, rect.Y, rect.W, rect.H);
                     await ctx.SetFillStyleAsync("#ffffff");
                     await ctx.FillRectAsync(rect.X, rect.Y, rect.W, rect.H);
 
-                    if (kind == PileKind.FaceDown || indexInPile < pile.Count - 1)
+                    if (!card.IsFaceUp)
                     {
                         await ctx.SetFillStyleAsync("#b42020");
                         await ctx.FillRectAsync(rect.X, rect.Y, rect.W, rect.H);
@@ -78,7 +90,7 @@ public class CanvasDrawer : IGameDrawer
                         _ => throw new ArgumentOutOfRangeException()
                     };
                     await ctx.SetFontAsync("bold 16px sans-serif");
-                    await ctx.FillTextAsync($"{suitGlyph}", rect.X + 4, rect.Y + 40);
+                    await ctx.FillTextAsync($"{suitGlyph}", rect.X + 4, rect.Y + rect.H / 2 -  20);
 
                     // draw rank
                     int rank = (int)card.Rank;
@@ -91,7 +103,7 @@ public class CanvasDrawer : IGameDrawer
                         _ => rank.ToString()
                     };
                     await ctx.SetFontAsync("bold 16px sans-serif");
-                    await ctx.FillTextAsync($"{rankStr}", rect.X + 4, rect.Y + 20);
+                    await ctx.FillTextAsync($"{rankStr}", rect.X + 4, rect.Y + rect.H / 2 - 40);
 
                     // Add upside-down rank and suit in the bottom right corner
                     await ctx.SetFontAsync("bold 16px sans-serif");
@@ -103,6 +115,13 @@ public class CanvasDrawer : IGameDrawer
                     await ctx.FillTextAsync($"{suitGlyph}", rect.X + rect.W / 2 - 8, rect.Y + rect.H / 2 + 12);
                 }
             }
+        }
+
+        if (game.Error != null)
+        {
+            await ctx.SetFillStyleAsync("#ff0000");
+            await ctx.SetFontAsync("bold 20px sans-serif");
+            await ctx.FillTextAsync($"Error: {game.Error}", 24, 80);
         }
     }
 }

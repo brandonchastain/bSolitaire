@@ -39,16 +39,17 @@ public sealed class BoardLayout
         return loc.Kind switch
         {
             PileKind.FaceDown => new Rect(20, RowOffset, CardWidth, CardHeight),
-            PileKind.FaceUp => new Rect(Width - CardWidth - 20, RowOffset + CardHeight + 10 + indexInPile * 5, CardWidth, CardHeight),
-            PileKind.Foundation => new Rect(20 + loc.PileIndex * (CardWidth + 10), RowOffset + indexInPile * 5, CardWidth, CardHeight),
-            PileKind.Tableau => new Rect(20 + loc.PileIndex * (CardWidth + 10), Height - CardHeight - RowOffset + indexInPile * 5, CardWidth, CardHeight),
+            PileKind.FaceUp => new Rect(20 + indexInPile * 15, RowOffset + CardHeight + 10, CardWidth, CardHeight),
+            PileKind.Foundation => new Rect(CardWidth * 3 + loc.PileIndex * (CardWidth + 10), RowOffset + indexInPile * 20, CardWidth, CardHeight),
+            PileKind.Tableau => new Rect(20 + loc.PileIndex * (CardWidth + 10), RowOffset * 7 + indexInPile * 20, CardWidth, CardHeight),
             _ => throw new ArgumentOutOfRangeException(nameof(loc.Kind), loc.Kind, null)
         };
     }
 
     public Rect EmptySlot(Location loc)
     {
-        return new Rect(loc.PileIndex * (CardWidth + 10) + 20, loc.Kind == PileKind.Tableau ? Height - CardHeight - 20 : 20, CardWidth, CardHeight);
+        var cardRect = CardRect(loc, 0);
+        return new Rect(cardRect.X, cardRect.Y, CardWidth, CardHeight);
     }
 
     public bool TryHitTest(Board board, double x, double y, out Location loc, out int indexInPile)
