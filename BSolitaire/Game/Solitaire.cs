@@ -15,7 +15,8 @@ public class Solitaire
     public Solitaire()
     {
         Board = new Board();
-        Layout = new BoardLayout(800, 600, 80, 120);
+        // Placeholder size; the host calls Resize with the real viewport on first render.
+        Layout = new BoardLayout(800, 600);
         input = new PointerInput(Board, Layout);
     }
 

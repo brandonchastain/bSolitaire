@@ -16,6 +16,12 @@ public class CanvasDrawer : IGameDrawer
     private string? fillStyle;
     private string? strokeStyle;
     private string? font;
+    private string? textAlign;
+
+    // Card face fonts, rebuilt once per frame from the current card size rather than per
+    // card, so the draw loop allocates nothing.
+    private string cornerFont = "";
+    private string centreFont = "";
 
     private readonly Stopwatch clock = Stopwatch.StartNew();
     private readonly Queue<double> recentDraws = new();
@@ -40,6 +46,10 @@ public class CanvasDrawer : IGameDrawer
         fillStyle = null;
         strokeStyle = null;
         font = null;
+        textAlign = null;
+
+        cornerFont = $"bold {layout.CardHeight * 0.16:F0}px sans-serif";
+        centreFont = $"bold {layout.CardHeight * 0.38:F0}px sans-serif";
 
         // One batch per frame: without it every Set*/Fill* call below is its own JS
         // interop round trip, and a dealt board costs several hundred of them per frame.
@@ -47,10 +57,6 @@ public class CanvasDrawer : IGameDrawer
 
         await Fill("#0b6b3a");
         await ctx.FillRectAsync(0, 0, layout.Width, layout.Height);
-
-        await Fill("#e8f0e8");
-        await Font("bold 20px sans-serif");
-        await ctx.FillTextAsync("bSolitaire", 24, 44);
 
         // draw the piles
         foreach (var kind in Board.AllKinds)
@@ -76,9 +82,9 @@ public class CanvasDrawer : IGameDrawer
                     continue;
                 }
 
-                // The stock draws every card to the same rect, so only its top card is
-                // ever visible — painting the other 23 is pure waste.
-                int firstVisible = kind == PileKind.FaceDown ? visibleCount - 1 : 0;
+                // Only the tableau fans. Every other pile stacks its cards in one slot, so
+                // painting anything below the top card is invisible work.
+                int firstVisible = kind == PileKind.Tableau ? 0 : visibleCount - 1;
 
                 for (int indexInPile = firstVisible; indexInPile < visibleCount; indexInPile++)
                 {
@@ -144,9 +150,11 @@ public class CanvasDrawer : IGameDrawer
 
         recentDraws.Enqueue(now);
 
+        // Bottom-left, where nothing else is drawn at any screen size.
         await Fill("#e8f0e8");
         await Font("bold 14px monospace");
-        await ctx.FillTextAsync($"{lastDrawMs,5:F1} ms   {recentDraws.Count,3} draws/s", layout.Width - 220, 30);
+        await Align("left");
+        await ctx.FillTextAsync($"{lastDrawMs,5:F1} ms   {recentDraws.Count,3} draws/s", 8, layout.Height - 8);
     }
 
     private async ValueTask DrawCard(Card card, Rect rect)
@@ -185,16 +193,26 @@ public class CanvasDrawer : IGameDrawer
             _ => rank.ToString()
         };
 
+        // Everything is proportional to the card, so a face reads the same whether the
+        // card is 48px wide on a phone or 110px on a desktop.
+        double pad = rect.W * 0.08;
+        double corner = rect.H * 0.16;
+        double centre = rect.H * 0.38;
+
         // All four corner marks share one font, so set it once rather than per mark.
-        await Font("bold 16px sans-serif");
-        await ctx.FillTextAsync(rankStr, rect.X + 4, rect.Y + rect.H / 2 - 40);
-        await ctx.FillTextAsync(suitGlyph, rect.X + 4, rect.Y + rect.H / 2 - 20);
-        await ctx.FillTextAsync(suitGlyph, rect.X + rect.W - 16, rect.Y + rect.H - 20);
-        await ctx.FillTextAsync(rankStr, rect.X + rect.W - 16, rect.Y + rect.H - 4);
+        await Font(cornerFont);
+        await Align("left");
+        await ctx.FillTextAsync(rankStr, rect.X + pad, rect.Y + pad + corner);
+        await ctx.FillTextAsync(suitGlyph, rect.X + pad, rect.Y + pad + corner * 2);
+
+        await Align("right");
+        await ctx.FillTextAsync(suitGlyph, rect.X + rect.W - pad, rect.Y + rect.H - pad - corner);
+        await ctx.FillTextAsync(rankStr, rect.X + rect.W - pad, rect.Y + rect.H - pad);
 
         // Add big suit glyph in the center of the card
-        await Font("bold 32px sans-serif");
-        await ctx.FillTextAsync(suitGlyph, rect.X + rect.W / 2 - 8, rect.Y + rect.H / 2 + 12);
+        await Font(centreFont);
+        await Align("center");
+        await ctx.FillTextAsync(suitGlyph, rect.X + rect.W / 2, rect.Y + rect.H / 2 + centre * 0.35);
     }
 
     private async ValueTask Fill(string style)
@@ -228,5 +246,21 @@ public class CanvasDrawer : IGameDrawer
 
         font = value;
         await ctx.SetFontAsync(value);
+    }
+
+    private async ValueTask Align(string value)
+    {
+        if (textAlign == value)
+        {
+            return;
+        }
+
+        textAlign = value;
+        await ctx.SetTextAlignAsync(value switch
+        {
+            "right" => TextAlign.Right,
+            "center" => TextAlign.Center,
+            _ => TextAlign.Left,
+        });
     }
 }
