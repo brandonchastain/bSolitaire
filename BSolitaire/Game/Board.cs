@@ -30,7 +30,9 @@ public class Board
 
     public List<Card> FaceDownPile { get; } = new();
     public List<Card> FaceUpPile { get; } = new();
-    public List<Card>[] FoundationPiles { get; } = new List<Card>[NumFoundationPiles]; // Index 0: Clubs, 1: Diamonds, 2: Hearts, 3: Spades
+    /// <summary>The four foundations. No pile is reserved for a suit — whichever ace lands on a
+    /// pile first claims it for the rest of the game.</summary>
+    public List<Card>[] FoundationPiles { get; } = new List<Card>[NumFoundationPiles];
     public List<Card>[] TableauPiles { get; } = new List<Card>[NumTableauPiles]; // Index 0-6: Tableau piles
 
     /// <summary>The cards in a pile.</summary>
@@ -50,6 +52,45 @@ public class Board
         PileKind.Tableau => NumTableauPiles,
         _ => 1
     };
+
+    /// <summary>
+    /// The foundation <paramref name="card"/> belongs on, or null if it has no home yet.
+    /// A card that continues a started pile goes there; an ace prefers the pile matching its
+    /// suit — the soft default the comment used to claim — and settles for any empty one, so
+    /// the first four aces still end up on four separate piles whatever order they arrive in.
+    /// </summary>
+    public Location? FoundationFor(Card card)
+    {
+        for (int i = 0; i < NumFoundationPiles; i++)
+        {
+            var pile = FoundationPiles[i];
+            if (pile.Count > 0 && Rules.CanFound(card, pile[^1]))
+            {
+                return new Location(PileKind.Foundation, i);
+            }
+        }
+
+        if (!Rules.CanFound(card, null))
+        {
+            return null;
+        }
+
+        int preferred = (int)card.Suit;
+        if (FoundationPiles[preferred].Count == 0)
+        {
+            return new Location(PileKind.Foundation, preferred);
+        }
+
+        for (int i = 0; i < NumFoundationPiles; i++)
+        {
+            if (FoundationPiles[i].Count == 0)
+            {
+                return new Location(PileKind.Foundation, i);
+            }
+        }
+
+        return null;
+    }
 
     public bool MakeMove(Move move)
     {

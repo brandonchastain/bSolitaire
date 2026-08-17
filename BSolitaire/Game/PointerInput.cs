@@ -138,6 +138,40 @@ public sealed class PointerInput
         }
     }
 
+    /// <summary>
+    /// Double-click at (x, y): send the card under the pointer to its foundation. A shortcut
+    /// only — it plays exactly the move a drag there would, so a card with no legal foundation
+    /// does nothing at all. Returns true if the board changed.
+    /// </summary>
+    public bool DoubleClick(double x, double y)
+    {
+        drag = null;
+
+        if (!layout.TryHitTest(board, x, y, out Location loc, out int indexInPile) ||
+            indexInPile < 0)
+        {
+            return false;
+        }
+
+        // Only a single, exposed, face-up card can be founded — never a buried one, and never
+        // a stack, since foundations take one card at a time.
+        var pile = board.Pile(loc);
+        if (loc.Kind == PileKind.FaceDown || loc.Kind == PileKind.Foundation ||
+            indexInPile != pile.Count - 1 || !pile[indexInPile].IsFaceUp)
+        {
+            return false;
+        }
+
+        var dest = board.FoundationFor(pile[indexInPile]);
+        if (dest == null)
+        {
+            return false;
+        }
+
+        ClearSelection();
+        return board.MakeMove(new Move(loc, dest.Value, 1));
+    }
+
     /// <summary>Pointer left the board or was cancelled mid-drag. The cards never left their
     /// pile, so abandoning the drag is all that's needed.</summary>
     public void Cancel()

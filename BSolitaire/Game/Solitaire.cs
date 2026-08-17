@@ -57,6 +57,9 @@ public class Solitaire
 
     public void OnPointerCancel() => Guarded(input.Cancel);
 
+    /// <summary>Double-click at (x, y): a shortcut for sending a card to its foundation.</summary>
+    public void OnDoubleClick(double x, double y) => Guarded(() => input.DoubleClick(x, y));
+
     /// <summary>
     /// The one hot input path — it fires continuously — so it sidesteps <see cref="Guarded"/>
     /// and only dirties the picture while a stack is actually held. Hovering must not

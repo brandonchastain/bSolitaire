@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "bsolitaire",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "BSolitaire", "--launch-profile", "http"],
+      "port": 5080
+    }
+  ]
+}

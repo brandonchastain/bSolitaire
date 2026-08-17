@@ -9,6 +9,7 @@
      @onpointerup="HandlePointerUp"
      @onpointerleave="HandlePointerCancel"
      @onpointercancel="HandlePointerCancel"
+     @ondblclick="HandleDoubleClick"
      @onkeydown="HandleKeyDown" @onkeydown:preventDefault="true">
     <BECanvas @ref="canvasRef" />
 </div>
@@ -78,6 +79,10 @@
     private void HandlePointerUp(PointerEventArgs e) => game.OnPointerUp(e.OffsetX, e.OffsetY);
 
     private void HandlePointerCancel(PointerEventArgs e) => game.OnPointerCancel();
+
+    // dblclick rather than a hand-rolled two-tap timer: the browser already knows the platform's
+    // double-click interval, and mobile browsers synthesise it from a double tap.
+    private void HandleDoubleClick(MouseEventArgs e) => game.OnDoubleClick(e.OffsetX, e.OffsetY);
 
     private void HandleKeyDown(KeyboardEventArgs e) => game.OnKeyDown(e.Code);
 
