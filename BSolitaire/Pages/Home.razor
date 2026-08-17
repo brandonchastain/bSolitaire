@@ -3,7 +3,13 @@
 @inject IJSRuntime JS
 @inject ILogger<Home> Logger
 
-<div id="board" tabindex="0" @onclick="HandleClick" @onkeydown="HandleKeyDown" @onkeydown:preventDefault="true">
+<div id="board" tabindex="0"
+     @onpointerdown="HandlePointerDown"
+     @onpointermove="HandlePointerMove"
+     @onpointerup="HandlePointerUp"
+     @onpointerleave="HandlePointerCancel"
+     @onpointercancel="HandlePointerCancel"
+     @onkeydown="HandleKeyDown" @onkeydown:preventDefault="true">
     <BECanvas @ref="canvasRef" />
 </div>
 
@@ -54,7 +60,15 @@
         }
     }
 
-    private void HandleClick(MouseEventArgs e) => game.OnClick(e.OffsetX, e.OffsetY);
+    // Pointer events rather than click: they cover mouse, touch, and pen, and a tap is
+    // just a press that never travelled — the game turns that back into a click itself.
+    private void HandlePointerDown(PointerEventArgs e) => game.OnPointerDown(e.OffsetX, e.OffsetY);
+
+    private void HandlePointerMove(PointerEventArgs e) => game.OnPointerMove(e.OffsetX, e.OffsetY);
+
+    private void HandlePointerUp(PointerEventArgs e) => game.OnPointerUp(e.OffsetX, e.OffsetY);
+
+    private void HandlePointerCancel(PointerEventArgs e) => game.OnPointerCancel();
 
     private void HandleKeyDown(KeyboardEventArgs e) => game.OnKeyDown(e.Code);
 

@@ -12,6 +12,12 @@ html, body {
     height: 100%;
     outline: none;
     -webkit-tap-highlight-color: transparent;
+
+    /* Dragging is driven by pointer events, so the browser must not claim the
+       gesture for scrolling/zooming, and a drag must not select the page. */
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 #board canvas {
