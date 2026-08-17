@@ -1,4 +1,4 @@
-namespace BSolitaire.Game;
+﻿namespace BSolitaire.Game;
 
 
 public static class Rules
@@ -140,13 +140,12 @@ public static class Rules
     }
 
     /// <summary>
-    /// The moves a player could pick from right now. Generated candidates are filtered
-    /// through <see cref="IsLegal"/>, so everything yielded here is legal and the rules stay
-    /// in one place. Turning the stock is included; recycling the waste is not, since it is
-    /// not expressed as a move. Whether a move is any *use* is not asked here — see
-    /// <see cref="IsStuck"/>.
+    /// Every legal move available right now. Candidates are generated here and filtered
+    /// through <see cref="IsLegal"/>, so the rules stay in one place. Turning the stock is
+    /// included; recycling the waste is not, since it is not expressed as a move. Whether a
+    /// move is any *use* is a separate question — see <see cref="IsStuck"/>.
     /// </summary>
-    public static IEnumerable<Move> CandidateMoves(Board board)
+    public static IEnumerable<Move> LegalMoves(Board board)
     {
         if (board.FaceDownPile.Count > 0)
         {
@@ -196,7 +195,7 @@ public static class Rules
     /// </summary>
     public static bool IsStuck(Board board)
     {
-        foreach (var move in CandidateMoves(board))
+        foreach (var move in LegalMoves(board))
         {
             if (IsProgress(board, move))
             {

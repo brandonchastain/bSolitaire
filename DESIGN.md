@@ -159,11 +159,11 @@ public static class Rules
     public static bool CanStack(Card moving, Card onto);   // alternating colour, descending
     public static bool CanFound(Card moving, Card? top);   // same suit, ascending, Ace on empty
     public static bool IsLegal(Board board, Move move);
-    public static IEnumerable<Move> CandidateMoves(Board board);
+    public static IEnumerable<Move> LegalMoves(Board board);
 }
 ```
 
-`CandidateMoves` looks like a luxury. It isn't — one function gives you the hint
+`LegalMoves` looks like a luxury. It isn't — one function gives you the hint
 button, auto-finish ("send everything home"), stuck-game detection, and a solver
 you can run over thousands of seeds to check the deal is fair. Build it early.
 
@@ -247,7 +247,7 @@ Game/
   Card.cs          Suit, Rank, Card
   Location.cs      PileKind, Location, Move
   Board.cs         piles, Deal(seed), Apply(Move), Clone()
-  Rules.cs         CanStack, CanFound, IsLegal, CandidateMoves, IsStuck
+  Rules.cs         CanStack, CanFound, IsLegal, LegalMoves, IsStuck
   BoardLayout.cs   Rect, CardRect, EmptySlot, TryHitTest
   Solitaire.cs     session: board + layout + drag + undo + animation
   IGameDrawer.cs   (unchanged)
