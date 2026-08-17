@@ -5,17 +5,33 @@ namespace BSolitaire.Game;
 /// </summary>
 public class Board
 {
-    private const int NumFoundationPiles = 4;
-    private const int NumTableauPiles = 7;
-
-    public List<Card> FaceDownPile { get; } = BuildDefaultDeck();
-    public List<Card> FaceUpPile { get; } = new();
-    public List<Card>[] FoundationPiles { get; } = new List<Card>[NumFoundationPiles]; // Index 0: Clubs, 1: Diamonds, 2: Hearts, 3: Spades
-    public List<Card>[] TableauPiles { get; } = new List<Card>[NumTableauPiles]; // Index 0-6: Tableau piles
-
     /// <summary>Every pile kind. Cached because Enum.GetValues allocates, and the
     /// draw loop and hit test both walk this on every frame and every pointer event.</summary>
     public static readonly PileKind[] AllKinds = Enum.GetValues<PileKind>();
+    private static readonly Dealer Dealer = new();
+    private const int NumFoundationPiles = 4;
+    private const int NumTableauPiles = 7;
+
+
+    public Board()
+    {
+        for (int i = 0; i < NumFoundationPiles; i++)
+        {
+            FoundationPiles[i] = new List<Card>();
+        }
+
+        for (int i = 0; i < NumTableauPiles; i++)
+        {
+            TableauPiles[i] = new List<Card>();
+        }
+
+        Dealer.Deal(FaceDownPile, TableauPiles);
+    }
+
+    public List<Card> FaceDownPile { get; } = new();
+    public List<Card> FaceUpPile { get; } = new();
+    public List<Card>[] FoundationPiles { get; } = new List<Card>[NumFoundationPiles]; // Index 0: Clubs, 1: Diamonds, 2: Hearts, 3: Spades
+    public List<Card>[] TableauPiles { get; } = new List<Card>[NumTableauPiles]; // Index 0-6: Tableau piles
 
     /// <summary>The cards in a pile.</summary>
     public List<Card> Pile(Location loc) => loc.Kind switch
@@ -35,40 +51,10 @@ public class Board
         _ => 1
     };
 
-    public Board()
-    {
-        for (int i = 0; i < NumFoundationPiles; i++)
-        {
-            FoundationPiles[i] = new List<Card>();
-        }
-
-        for (int i = 0; i < NumTableauPiles; i++)
-        {
-            TableauPiles[i] = new List<Card>();
-        }
-
-        this.Deal();
-    }
-
     public bool MakeMove(Move move)
     {
-        var from = move.From.Kind switch
-        {
-            PileKind.FaceDown => FaceDownPile,
-            PileKind.FaceUp => FaceUpPile,
-            PileKind.Foundation => FoundationPiles[move.From.PileIndex],
-            PileKind.Tableau => TableauPiles[move.From.PileIndex],
-            _ => throw new ArgumentOutOfRangeException(nameof(move.From.Kind), move.From.Kind, null)
-        };
-
-        var to = move.To.Kind switch
-        {
-            PileKind.FaceDown => FaceDownPile,
-            PileKind.FaceUp => FaceUpPile,
-            PileKind.Foundation => FoundationPiles[move.To.PileIndex],
-            PileKind.Tableau => TableauPiles[move.To.PileIndex],
-            _ => throw new ArgumentOutOfRangeException(nameof(move.To.Kind), move.To.Kind, null)
-        };
+        var from = Pile(move.From);
+        var to = Pile(move.To);
 
         if (Rules.IsLegal(this, move))
         {
@@ -100,52 +86,40 @@ public class Board
         return true;
     }
 
-    /// <summary>
-    /// Deal cards from facedown into tableau piles. The first pile gets 1 card, the second gets 2, and so on, up to the seventh pile which gets 7 cards. The top card of each tableau pile is turned face up.
-    /// Dealing must happen in order of tableau piles, one card at a time, from the top of the facedown pile.
-    /// </summary>
-    private void Deal()
+    /// <summary>Turns the top stock card face up onto the waste.</summary>
+    public bool DealFromStock()
     {
-        // Deal left-to-right, adding one more card to each tableau pile than the previous one.
-        // Each new card is taken from the top of the stock and placed on the current pile,
-        // so the last card dealt to a pile is the one on top.
-        for (int row = 0; row < NumTableauPiles; row++)
+        if (FaceDownPile.Count == 0)
         {
-            for (int pileIndex = row; pileIndex < NumTableauPiles; pileIndex++)
-            {
-                var card = FaceDownPile[^1];
-                FaceDownPile.RemoveAt(FaceDownPile.Count - 1);
-                TableauPiles[pileIndex].Add(card);
-
-                if (pileIndex == row)
-                {
-                    card.Flip();
-                }
-            }
+            return false;
         }
+
+        return MakeMove(new Move(
+            new Location(PileKind.FaceDown, 0),
+            new Location(PileKind.FaceUp, 0),
+            1));
     }
 
-    private static List<Card> BuildDefaultDeck()
+    /// <summary>
+    /// Turns the whole waste back over to form a fresh stock, so the cards come off again
+    /// in the order they went on. Not expressed as a Move: it touches every card at once
+    /// and there is no legality question for Rules to answer.
+    /// </summary>
+    public bool RecycleWaste()
     {
-        var deck = new List<Card>();
-        foreach (Suit suit in Enum.GetValues<Suit>())
+        if (FaceDownPile.Count > 0 || FaceUpPile.Count == 0)
         {
-            foreach (Rank rank in Enum.GetValues<Rank>())
-            {
-                deck.Add(new Card(suit, rank));
-            }
+            return false;
         }
 
-        // shuffle the deck
-        var rng = new Random();
-        int n = deck.Count;
-        while (n > 1)
+        for (int i = FaceUpPile.Count - 1; i >= 0; i--)
         {
-            n--;
-            int k = rng.Next(n + 1);
-            (deck[k], deck[n]) = (deck[n], deck[k]);
+            var card = FaceUpPile[i];
+            card.Flip();
+            FaceDownPile.Add(card);
         }
 
-        return deck;
+        FaceUpPile.Clear();
+        return true;
     }
 }

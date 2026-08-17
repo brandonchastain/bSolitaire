@@ -68,6 +68,7 @@ public sealed class BoardLayout
     /// </summary>
     public bool TryHitPile(Board board, double x, double y, out Location loc)
     {
+        return TryHitTest(board, x, y, out loc, out _);
         foreach (var kind in DropTargetKinds)
         {
             int pileCount = board.PileCountOf(kind);

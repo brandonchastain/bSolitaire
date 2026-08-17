@@ -30,7 +30,7 @@ public class CanvasDrawer : IGameDrawer
     {
         Board board = game.Board;
         BoardLayout layout = game.Layout;
-        Solitaire.DragState? drag = game.Drag;
+        DragState? drag = game.Drag;
 
         double startedAt = clock.Elapsed.TotalMilliseconds;
 

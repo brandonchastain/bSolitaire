@@ -1,0 +1,273 @@
+namespace BSolitaire.Game;
+
+/// <summary>
+/// A stack of cards held by the pointer. The cards are NOT removed from their pile while
+/// dragging — the drawer skips them and paints them at the cursor instead — so abandoning
+/// a drag needs no undo, and an illegal drop snaps back for free.
+/// </summary>
+public sealed class DragState
+{
+    public required Location From { get; init; }
+
+    /// <summary>Index within the source pile of the lowest dragged card.</summary>
+    public required int Index { get; init; }
+
+    public required IReadOnlyList<Card> Cards { get; init; }
+
+    /// <summary>Cursor position relative to the grabbed card's top-left corner.</summary>
+    public required double OffsetX { get; init; }
+
+    public required double OffsetY { get; init; }
+
+    public double X { get; set; }
+
+    public double Y { get; set; }
+
+    /// <summary>False until the pointer has travelled far enough to count as a drag.</summary>
+    public bool Active { get; set; }
+}
+
+/// <summary>
+/// Turns pointer gestures into board moves. This type owns everything about *how* the
+/// player is interacting — the drag in progress, the tapped selection — and nothing about
+/// what the rules are (<see cref="Rules"/>), how a move is applied (<see cref="Board"/>),
+/// or how any of it is drawn.
+/// </summary>
+public sealed class PointerInput
+{
+    /// <summary>How far the pointer must travel before a press counts as a drag, not a tap.</summary>
+    private const double DragThreshold = 4;
+
+    private readonly Board board;
+    private readonly BoardLayout layout;
+
+    private DragState? drag;
+    private double downX;
+    private double downY;
+
+    // Tap-to-select: the second interaction mode, kept because it is the natural one on
+    // touch. Only the location and size of the selection matter; the card itself is
+    // whatever sits there when the move is made.
+    private Location? selected;
+    private int selectedCount;
+
+    public PointerInput(Board board, BoardLayout layout)
+    {
+        this.board = board;
+        this.layout = layout;
+    }
+
+    /// <summary>The stack currently being dragged, or null. Stays null until the press has
+    /// travelled far enough, so a tap never flickers a card off its pile.</summary>
+    public DragState? Drag => drag is { Active: true } ? drag : null;
+
+    /// <summary>Pointer pressed at (x, y). Grabs a stack if one is under the pointer.</summary>
+    public void Down(double x, double y)
+    {
+        downX = x;
+        downY = y;
+        drag = null;
+
+        if (!layout.TryHitTest(board, x, y, out Location loc, out int indexInPile))
+        {
+            return;
+        }
+
+        if (!TryGrab(loc, indexInPile, out var cards))
+        {
+            return;
+        }
+
+        ClearSelection();
+
+        var rect = layout.CardRect(loc, indexInPile);
+        drag = new DragState
+        {
+            From = loc,
+            Index = indexInPile,
+            Cards = cards,
+            OffsetX = x - rect.X,
+            OffsetY = y - rect.Y,
+            X = x,
+            Y = y,
+        };
+    }
+
+    /// <summary>
+    /// Pointer moved to (x, y). Returns true if the picture changed, which is only while a
+    /// stack is actually held — plain hovering must not force a redraw.
+    /// </summary>
+    public bool Move(double x, double y)
+    {
+        if (drag == null)
+        {
+            return false;
+        }
+
+        drag.X = x;
+        drag.Y = y;
+
+        if (!drag.Active &&
+            (Math.Abs(x - downX) > DragThreshold || Math.Abs(y - downY) > DragThreshold))
+        {
+            drag.Active = true;
+        }
+
+        return true;
+    }
+
+    /// <summary>Pointer released at (x, y). Drops the held stack, or falls back to a tap.</summary>
+    public void Up(double x, double y)
+    {
+        try
+        {
+            if (drag is { Active: true } held)
+            {
+                Drop(held, x, y);
+            }
+            else
+            {
+                // Never travelled far enough to be a drag. Replay it from where the press
+                // started, so a few pixels of drift don't retarget the tap.
+                Tap(downX, downY);
+            }
+        }
+        finally
+        {
+            drag = null;
+        }
+    }
+
+    /// <summary>Pointer left the board or was cancelled mid-drag. The cards never left their
+    /// pile, so abandoning the drag is all that's needed.</summary>
+    public void Cancel()
+    {
+        drag = null;
+    }
+
+    /// <summary>
+    /// Decides what a press picks up. Only face-up-ness and position in the pile are
+    /// considered here — whether the resulting move is legal is <see cref="Rules"/>'
+    /// business, asked on drop.
+    /// </summary>
+    private bool TryGrab(Location loc, int indexInPile, out IReadOnlyList<Card> cards)
+    {
+        cards = Array.Empty<Card>();
+
+        if (indexInPile < 0)
+        {
+            return false; // empty slot
+        }
+
+        switch (loc.Kind)
+        {
+            case PileKind.Tableau:
+                var tableau = board.TableauPiles[loc.PileIndex];
+                for (int i = indexInPile; i < tableau.Count; i++)
+                {
+                    if (!tableau[i].IsFaceUp)
+                    {
+                        return false;
+                    }
+                }
+
+                cards = tableau.GetRange(indexInPile, tableau.Count - indexInPile);
+                return true;
+
+            case PileKind.FaceUp:
+                if (indexInPile != board.FaceUpPile.Count - 1)
+                {
+                    return false; // only the top of the waste is playable
+                }
+
+                cards = new[] { board.FaceUpPile[indexInPile] };
+                return true;
+
+            case PileKind.Foundation:
+                var foundation = board.FoundationPiles[loc.PileIndex];
+                if (indexInPile != foundation.Count - 1)
+                {
+                    return false;
+                }
+
+                cards = new[] { foundation[indexInPile] };
+                return true;
+
+            default:
+                return false; // the stock is dealt from, never dragged
+        }
+    }
+
+    private void Drop(DragState held, double x, double y)
+    {
+        // Probe from the centre of the dragged card rather than the cursor: the cursor sits
+        // wherever the card was grabbed, which may be a far corner.
+        double probeX = x - held.OffsetX + layout.CardWidth / 2;
+        double probeY = y - held.OffsetY + layout.CardHeight / 2;
+
+        if (!layout.TryHitPile(board, probeX, probeY, out Location dest) || dest == held.From)
+        {
+            return;
+        }
+
+        // MakeMove refuses anything illegal, and the cards were never removed from their
+        // pile, so a refusal is the snap-back.
+        board.MakeMove(new Move(held.From, dest, held.Cards.Count));
+    }
+
+    private void Tap(double x, double y)
+    {
+        if (!layout.TryHitTest(board, x, y, out Location loc, out int indexInPile))
+        {
+            ClearSelection(); // tapping bare felt cancels a selection
+            return;
+        }
+
+        if (loc.Kind == PileKind.FaceDown)
+        {
+            if (!board.DealFromStock())
+            {
+                board.RecycleWaste();
+            }
+
+            ClearSelection();
+            return;
+        }
+
+        if (selected == null)
+        {
+            Select(loc, indexInPile);
+            return;
+        }
+
+        // With something selected, a tap on any playable pile is an attempt to move it
+        // there. The stock and waste are not destinations.
+        if (loc.Kind != PileKind.FaceUp && loc.Kind != PileKind.FaceDown)
+        {
+            board.MakeMove(new Move(selected.Value, loc, selectedCount));
+            ClearSelection();
+        }
+    }
+
+    private void Select(Location loc, int indexInPile)
+    {
+        if (loc.Kind == PileKind.FaceUp && indexInPile == board.FaceUpPile.Count - 1)
+        {
+            selected = loc;
+            selectedCount = 1;
+            return;
+        }
+
+        if (loc.Kind == PileKind.Tableau && indexInPile >= 0)
+        {
+            selected = loc;
+            selectedCount = board.TableauPiles[loc.PileIndex].Count - indexInPile;
+        }
+    }
+
+    private void ClearSelection()
+    {
+        selected = null;
+        selectedCount = 0;
+    }
+}
