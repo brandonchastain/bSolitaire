@@ -1,4 +1,4 @@
-namespace BSolitaire.Game;
+﻿namespace BSolitaire.Game;
 
 /// <summary>
 /// Holds the cards, piles, and state of the Solitaire game.
@@ -11,6 +11,9 @@ public class Board
     private static readonly Dealer Dealer = new();
     private const int NumFoundationPiles = 4;
     private const int NumTableauPiles = 7;
+
+    /// <summary>Ace through king: a full foundation.</summary>
+    private const int FoundationSize = 13;
 
 
     public Board()
@@ -25,7 +28,7 @@ public class Board
             TableauPiles[i] = new List<Card>();
         }
 
-        Dealer.Deal(FaceDownPile, TableauPiles);
+        Reset();
     }
 
     public List<Card> FaceDownPile { get; } = new();
@@ -34,6 +37,33 @@ public class Board
     /// pile first claims it for the rest of the game.</summary>
     public List<Card>[] FoundationPiles { get; } = new List<Card>[NumFoundationPiles];
     public List<Card>[] TableauPiles { get; } = new List<Card>[NumTableauPiles]; // Index 0-6: Tableau piles
+
+    /// <summary>
+    /// Whether the game is still going, and if not, how it ended. Recomputed after every
+    /// move rather than on demand: the answer only changes when the board does, and both the
+    /// drawer and the input path ask for it.
+    /// </summary>
+    public GameState State { get; private set; }
+
+    /// <summary>Shuffles a new deck and deals it. The old game is simply dropped.</summary>
+    public void Reset()
+    {
+        FaceDownPile.Clear();
+        FaceUpPile.Clear();
+
+        foreach (var pile in FoundationPiles)
+        {
+            pile.Clear();
+        }
+
+        foreach (var pile in TableauPiles)
+        {
+            pile.Clear();
+        }
+
+        Dealer.Deal(FaceDownPile, TableauPiles);
+        State = GameState.Playing;
+    }
 
     /// <summary>The cards in a pile.</summary>
     public List<Card> Pile(Location loc) => loc.Kind switch
@@ -124,7 +154,26 @@ public class Board
             }
         }
 
+        RefreshState();
         return true;
+    }
+
+    /// <summary>
+    /// Works out whether the game is over. Only called after a move, since nothing else can
+    /// end a game — the board is otherwise idle between pointer events.
+    /// </summary>
+    private void RefreshState()
+    {
+        foreach (var pile in FoundationPiles)
+        {
+            if (pile.Count < FoundationSize)
+            {
+                State = Rules.IsStuck(this) ? GameState.Stuck : GameState.Playing;
+                return;
+            }
+        }
+
+        State = GameState.Won;
     }
 
     /// <summary>Turns the top stock card face up onto the waste.</summary>
@@ -161,6 +210,7 @@ public class Board
         }
 
         FaceUpPile.Clear();
+        RefreshState();
         return true;
     }
 }

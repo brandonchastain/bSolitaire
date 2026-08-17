@@ -116,6 +116,11 @@ public class CanvasDrawer : IGameDrawer
             await ctx.SetShadowOffsetYAsync(0);
         }
 
+        if (game.State != GameState.Playing)
+        {
+            await DrawBanner(layout, game.State);
+        }
+
         if (game.Error != null)
         {
             await Fill("#ff0000");
@@ -133,6 +138,51 @@ public class CanvasDrawer : IGameDrawer
         // Measured after the batch flushes, so it includes the interop round trip.
         // Reported on the next draw, since the text is already in this one.
         lastDrawMs = clock.Elapsed.TotalMilliseconds - startedAt;
+    }
+
+    /// <summary>
+    /// The end-of-game panel: what happened, and the button that deals again. Both rects come
+    /// from the layout, which is also what the hit test reads, so the button can't drift away
+    /// from the thing you click.
+    /// </summary>
+    private async ValueTask DrawBanner(BoardLayout layout, GameState state)
+    {
+        var panel = layout.Banner;
+        var button = layout.NewGameButton;
+
+        // Dim the board so the panel reads as being in front of it rather than part of it.
+        await Fill("rgba(0, 0, 0, 0.45)");
+        await ctx.FillRectAsync(0, 0, layout.Width, layout.Height);
+
+        await Fill("#12351f");
+        await ctx.FillRectAsync(panel.X, panel.Y, panel.W, panel.H);
+        await Stroke("#e8f0e8");
+        await ctx.StrokeRectAsync(panel.X, panel.Y, panel.W, panel.H);
+
+        await Fill("#e8f0e8");
+        await Font($"bold {panel.H * 0.19:F0}px sans-serif");
+        await Align("center");
+        await ctx.FillTextAsync(
+            state == GameState.Won ? "You win!" : "No moves left",
+            panel.X + panel.W / 2,
+            panel.Y + panel.H * 0.3);
+
+        await Font($"{panel.H * 0.12:F0}px sans-serif");
+        await ctx.FillTextAsync(
+            state == GameState.Won ? "All 52 cards are home." : "This deal can't be finished.",
+            panel.X + panel.W / 2,
+            panel.Y + panel.H * 0.46);
+
+        await Fill("#0b6b3a");
+        await ctx.FillRectAsync(button.X, button.Y, button.W, button.H);
+        await ctx.StrokeRectAsync(button.X, button.Y, button.W, button.H);
+
+        await Fill("#ffffff");
+        await Font($"bold {button.H * 0.42:F0}px sans-serif");
+        await ctx.FillTextAsync(
+            "New Game",
+            button.X + button.W / 2,
+            button.Y + button.H * 0.68);
     }
 
     /// <summary>

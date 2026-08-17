@@ -68,6 +68,11 @@ public sealed class PointerInput
         downY = y;
         drag = null;
 
+        if (OverBanner(x, y))
+        {
+            return; // the panel is on top; nothing under it is grabbable
+        }
+
         if (!layout.TryHitTest(board, x, y, out Location loc, out int indexInPile))
         {
             return;
@@ -146,6 +151,11 @@ public sealed class PointerInput
     public bool DoubleClick(double x, double y)
     {
         drag = null;
+
+        if (OverBanner(x, y))
+        {
+            return false;
+        }
 
         if (!layout.TryHitTest(board, x, y, out Location loc, out int indexInPile) ||
             indexInPile < 0)
@@ -249,8 +259,24 @@ public sealed class PointerInput
         board.MakeMove(new Move(held.From, dest, held.Cards.Count));
     }
 
+    /// <summary>Whether a point falls on the game-over panel, which is only there once the
+    /// game has ended.</summary>
+    private bool OverBanner(double x, double y) =>
+        board.State != GameState.Playing && layout.Banner.Contains(x, y);
+
     private void Tap(double x, double y)
     {
+        if (OverBanner(x, y))
+        {
+            if (layout.NewGameButton.Contains(x, y))
+            {
+                board.Reset();
+                ClearSelection();
+            }
+
+            return;
+        }
+
         if (!layout.TryHitTest(board, x, y, out Location loc, out int indexInPile))
         {
             ClearSelection(); // tapping bare felt cancels a selection

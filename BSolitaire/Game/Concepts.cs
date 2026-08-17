@@ -4,6 +4,18 @@ public readonly record struct Location(PileKind Kind, int PileIndex);
 
 public readonly record struct Move(Location From, Location To, int Count);
 
+/// <summary>Where a game has got to. Anything other than <see cref="Playing"/> is over.</summary>
+public enum GameState
+{
+    Playing,
+
+    /// <summary>All fifty-two cards are on the foundations.</summary>
+    Won,
+
+    /// <summary>No legal move remains, so the game cannot be finished from here.</summary>
+    Stuck
+}
+
 public enum PileKind
 {
     FaceDown,

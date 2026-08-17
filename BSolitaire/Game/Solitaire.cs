@@ -27,6 +27,9 @@ public class Solitaire
     /// <summary>The stack currently held by the pointer, or null.</summary>
     public DragState? Drag => input.Drag;
 
+    /// <summary>Whether the game is still going, and if not, how it ended.</summary>
+    public GameState State => Board.State;
+
     /// <summary>Last unhandled exception, painted on the board. Null when all is well.</summary>
     public string? Error { get; private set; }
 
@@ -81,11 +84,14 @@ public class Solitaire
             ShowStats = !ShowStats;
             NeedsRedraw = true;
         }
+        else if (code == "KeyR")
+        {
+            Reset();
+        }
     }
 
-    public void Reset()
-    {
-    }
+    /// <summary>Abandons the current game and deals a new one.</summary>
+    public void Reset() => Guarded(Board.Reset);
 
     /// <summary>
     /// Every input entry point funnels through here, so the error boundary and the redraw

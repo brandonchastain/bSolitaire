@@ -48,6 +48,13 @@ public sealed class BoardLayout
     /// <summary>Vertical gap between consecutive cards in a fanned tableau pile.</summary>
     public double FanOffset { get; private set; }
 
+    /// <summary>The panel shown when a game is over. Drawn only then, but always positioned,
+    /// so the drawer and the hit test can't disagree about where it is.</summary>
+    public Rect Banner { get; private set; }
+
+    /// <summary>The button inside <see cref="Banner"/> that deals a new game.</summary>
+    public Rect NewGameButton { get; private set; }
+
     /// <summary>Piles that can be dropped onto. The stock and waste are never drop targets.</summary>
     private static readonly PileKind[] DropTargetKinds = [PileKind.Tableau, PileKind.Foundation];
 
@@ -82,6 +89,20 @@ public sealed class BoardLayout
         double available = Math.Max(CardHeight, height - tableauY - gutter);
         double toFit = (available - CardHeight) / (FannedCardsToFit - 1);
         FanOffset = Math.Clamp(toFit, CardHeight * 0.12, CardHeight * 0.28);
+
+        // Sized off the card rather than the viewport, so the panel and its text keep the
+        // same proportions as everything else on the board.
+        double bannerW = Math.Min(width - 2 * gutter, CardWidth * 4.4);
+        double bannerH = CardHeight * 1.15;
+        Banner = new Rect((width - bannerW) / 2, (height - bannerH) / 2, bannerW, bannerH);
+
+        double buttonW = Math.Min(bannerW - gutter * 2, CardWidth * 2.1);
+        double buttonH = bannerH * 0.34;
+        NewGameButton = new Rect(
+            Banner.X + (bannerW - buttonW) / 2,
+            Banner.Y + bannerH - buttonH - bannerH * 0.14,
+            buttonW,
+            buttonH);
     }
 
     /// <summary>Left edge of one of the seven columns the whole board is built on.</summary>
@@ -111,14 +132,10 @@ public sealed class BoardLayout
     }
 
     /// <summary>
-    /// Pile-level hit test, used for drop targets. Deliberately more forgiving than
-    /// <see cref="TryHitTest"/>: it reports which pile a point falls in rather than
-    /// which card, and a tableau column claims everything below its slot — so
-    /// dropping past the end of a short column still lands in that column.
+    /// Pile-level hit test, used for drop targets. Extends tableau columns to bottom of the board.
     /// </summary>
     public bool TryHitPile(Board board, double x, double y, out Location loc)
     {
-        return TryHitTest(board, x, y, out loc, out _);
         foreach (var kind in DropTargetKinds)
         {
             int pileCount = board.PileCountOf(kind);
