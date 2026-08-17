@@ -49,7 +49,16 @@
         try
         {
             game.Update(TimeSpan.FromMilliseconds(timestampMs));
+
+            // The board is static almost all the time and the canvas keeps the last
+            // frame, so redrawing an unchanged board is pure waste.
+            if (!game.NeedsRedraw)
+            {
+                return;
+            }
+
             await drawer.Draw(game);
+            game.MarkClean();
         }
         catch (Exception ex)
         {

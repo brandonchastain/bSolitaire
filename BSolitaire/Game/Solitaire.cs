@@ -52,6 +52,21 @@ public class Solitaire
     /// has travelled far enough to be a drag, so taps never flicker a card off its pile.</summary>
     public DragState? Drag => drag is { Active: true } ? drag : null;
 
+    /// <summary>
+    /// True when the picture is out of date. A solitaire board is static almost all the
+    /// time, so the host skips drawing entirely until something actually changes — the
+    /// canvas keeps the last frame either way.
+    /// </summary>
+    public bool NeedsRedraw { get; private set; } = true;
+
+    /// <summary>Whether the draw-time overlay is shown. Toggled with F.</summary>
+    public bool ShowStats { get; private set; }
+
+    /// <summary>Called by the host once the current picture has been drawn.</summary>
+    public void MarkClean() => NeedsRedraw = false;
+
+    private void MarkDirty() => NeedsRedraw = true;
+
     public Solitaire()
     {
     }
@@ -62,6 +77,7 @@ public class Solitaire
     public void Resize(double width, double height)
     {
         Layout.Resize(width, height);
+        MarkDirty();
     }
 
     /// <summary>Called once per animation frame, before the drawer runs.</summary>
@@ -147,6 +163,10 @@ public class Solitaire
         {
             Error = ex.ToString();
         }
+        finally
+        {
+            MarkDirty();
+        }
     }
 
     /// <summary>Pointer pressed at (x, y). Grabs a stack if one is under the pointer.</summary>
@@ -188,6 +208,10 @@ public class Solitaire
         {
             Error = ex.ToString();
         }
+        finally
+        {
+            MarkDirty();
+        }
     }
 
     /// <summary>Pointer moved to (x, y). Promotes a press to a drag once it clears the threshold.</summary>
@@ -200,6 +224,7 @@ public class Solitaire
 
         drag.X = x;
         drag.Y = y;
+        MarkDirty();
 
         if (!drag.Active &&
             (Math.Abs(x - pointerDownX) > DragThreshold || Math.Abs(y - pointerDownY) > DragThreshold))
@@ -231,6 +256,7 @@ public class Solitaire
         finally
         {
             drag = null;
+            MarkDirty();
         }
     }
 
@@ -239,6 +265,7 @@ public class Solitaire
     public void OnPointerCancel()
     {
         drag = null;
+        MarkDirty();
     }
 
     /// <summary>
@@ -321,6 +348,11 @@ public class Solitaire
     /// <summary>A key press, using KeyboardEvent.code values ("KeyR", "Space", "ArrowLeft"...).</summary>
     public void OnKeyDown(string code)
     {
+        if (code == "KeyF")
+        {
+            ShowStats = !ShowStats;
+            MarkDirty();
+        }
     }
 
     public void Reset()

@@ -1,14 +1,25 @@
+using System.Diagnostics;
 using Blazor.Extensions.Canvas.Canvas2D;
 
 namespace BSolitaire.Game;
 
 /// <summary>
-/// Draws the game to a 2D canvas. Placeholder for now — replace the body of
-/// <see cref="Draw"/> as the game takes shape.
+/// Draws the game to a 2D canvas.
 /// </summary>
 public class CanvasDrawer : IGameDrawer
 {
     private readonly Canvas2DContext ctx;
+
+    // Every canvas call crosses into JS, so the drawer keeps track of the context's
+    // current fill/stroke/font and skips setting a value that is already set. Cards
+    // repeat the same handful of styles dozens of times per frame.
+    private string? fillStyle;
+    private string? strokeStyle;
+    private string? font;
+
+    private readonly Stopwatch clock = Stopwatch.StartNew();
+    private readonly Queue<double> recentDraws = new();
+    private double lastDrawMs;
 
     public CanvasDrawer(Canvas2DContext ctx)
     {
@@ -21,33 +32,34 @@ public class CanvasDrawer : IGameDrawer
         BoardLayout layout = game.Layout;
         Solitaire.DragState? drag = game.Drag;
 
-        // One batch per frame. Without it every Set*/Fill* call below is its own JS
-        // interop round trip, and a dealt board costs several hundred of them per frame
-        // — enough to make dragging feel laggy.
+        double startedAt = clock.Elapsed.TotalMilliseconds;
+
+        // The cached styles describe the context, not this call, but resetting them per
+        // frame costs three redundant sets and keeps the cache honest if anything else
+        // ever touches the context.
+        fillStyle = null;
+        strokeStyle = null;
+        font = null;
+
+        // One batch per frame: without it every Set*/Fill* call below is its own JS
+        // interop round trip, and a dealt board costs several hundred of them per frame.
         await ctx.BeginBatchAsync();
 
-        await ctx.SetFillStyleAsync("#0b6b3a");
+        await Fill("#0b6b3a");
         await ctx.FillRectAsync(0, 0, layout.Width, layout.Height);
 
-        await ctx.SetFillStyleAsync("#e8f0e8");
-        await ctx.SetFontAsync("bold 20px sans-serif");
+        await Fill("#e8f0e8");
+        await Font("bold 20px sans-serif");
         await ctx.FillTextAsync("bSolitaire", 24, 44);
 
         // draw the piles
-        foreach (var kind in Enum.GetValues<PileKind>())
+        foreach (var kind in Board.AllKinds)
         {
-            var piles = kind switch
+            int pileCount = board.PileCountOf(kind);
+            for (int pileIndex = 0; pileIndex < pileCount; pileIndex++)
             {
-                PileKind.FaceDown => new[] { board.FaceDownPile },
-                PileKind.FaceUp => new[] { board.FaceUpPile },
-                PileKind.Foundation => board.FoundationPiles,
-                PileKind.Tableau => board.TableauPiles,
-                _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
-            };
-
-            for (int pileIndex = 0; pileIndex < piles.Length; pileIndex++)
-            {
-                var pile = piles[pileIndex];
+                var location = new Location(kind, pileIndex);
+                var pile = board.Pile(location);
 
                 // Cards from the grab index up are held by the pointer, so they are
                 // skipped here and painted at the cursor after every pile is drawn.
@@ -58,15 +70,19 @@ public class CanvasDrawer : IGameDrawer
                 if (visibleCount == 0)
                 {
                     // draw empty slot
-                    var spot = layout.EmptySlot(new Location(kind, pileIndex));
-                    await ctx.SetStrokeStyleAsync("#ffffff");
+                    var spot = layout.EmptySlot(location);
+                    await Stroke("#ffffff");
                     await ctx.StrokeRectAsync(spot.X, spot.Y, spot.W, spot.H);
                     continue;
                 }
 
-                for (int indexInPile = 0; indexInPile < visibleCount; indexInPile++)
+                // The stock draws every card to the same rect, so only its top card is
+                // ever visible — painting the other 23 is pure waste.
+                int firstVisible = kind == PileKind.FaceDown ? visibleCount - 1 : 0;
+
+                for (int indexInPile = firstVisible; indexInPile < visibleCount; indexInPile++)
                 {
-                    await DrawCard(pile[indexInPile], layout.CardRect(new Location(kind, pileIndex), indexInPile));
+                    await DrawCard(pile[indexInPile], layout.CardRect(location, indexInPile));
                 }
             }
         }
@@ -96,38 +112,60 @@ public class CanvasDrawer : IGameDrawer
 
         if (game.Error != null)
         {
-            await ctx.SetFillStyleAsync("#ff0000");
-            await ctx.SetFontAsync("bold 20px sans-serif");
+            await Fill("#ff0000");
+            await Font("bold 20px sans-serif");
             await ctx.FillTextAsync($"Error: {game.Error}", 24, 80);
         }
 
+        if (game.ShowStats)
+        {
+            await DrawStats(layout);
+        }
+
         await ctx.EndBatchAsync();
+
+        // Measured after the batch flushes, so it includes the interop round trip.
+        // Reported on the next draw, since the text is already in this one.
+        lastDrawMs = clock.Elapsed.TotalMilliseconds - startedAt;
+    }
+
+    /// <summary>
+    /// Draw time and draws per second. Draws per second is not frame rate — the host
+    /// skips drawing when nothing changed, so it reads zero on an idle board and only
+    /// means anything while something is moving.
+    /// </summary>
+    private async ValueTask DrawStats(BoardLayout layout)
+    {
+        double now = clock.Elapsed.TotalMilliseconds;
+        while (recentDraws.Count > 0 && now - recentDraws.Peek() > 1000)
+        {
+            recentDraws.Dequeue();
+        }
+
+        recentDraws.Enqueue(now);
+
+        await Fill("#e8f0e8");
+        await Font("bold 14px monospace");
+        await ctx.FillTextAsync($"{lastDrawMs,5:F1} ms   {recentDraws.Count,3} draws/s", layout.Width - 220, 30);
     }
 
     private async ValueTask DrawCard(Card card, Rect rect)
     {
-        await ctx.SetStrokeStyleAsync("#000000");
+        await Stroke("#000000");
         await ctx.StrokeRectAsync(rect.X, rect.Y, rect.W, rect.H);
-        await ctx.SetFillStyleAsync("#ffffff");
-        await ctx.FillRectAsync(rect.X, rect.Y, rect.W, rect.H);
 
         if (!card.IsFaceUp)
         {
-            await ctx.SetFillStyleAsync("#b42020");
+            // No white undercoat: the back covers exactly the same rect.
+            await Fill("#b42020");
             await ctx.FillRectAsync(rect.X, rect.Y, rect.W, rect.H);
             return;
         }
 
-        if (card.IsRed)
-        {
-            await ctx.SetFillStyleAsync("#ff0000");
-        }
-        else
-        {
-            await ctx.SetFillStyleAsync("#000000");
-        }
+        await Fill("#ffffff");
+        await ctx.FillRectAsync(rect.X, rect.Y, rect.W, rect.H);
+        await Fill(card.IsRed ? "#ff0000" : "#000000");
 
-        // draw the rank and suit
         string suitGlyph = card.Suit switch
         {
             Suit.Clubs => "♣",
@@ -136,10 +174,7 @@ public class CanvasDrawer : IGameDrawer
             Suit.Spades => "♠",
             _ => throw new ArgumentOutOfRangeException()
         };
-        await ctx.SetFontAsync("bold 16px sans-serif");
-        await ctx.FillTextAsync($"{suitGlyph}", rect.X + 4, rect.Y + rect.H / 2 -  20);
 
-        // draw rank
         int rank = (int)card.Rank;
         string rankStr = rank switch
         {
@@ -149,16 +184,49 @@ public class CanvasDrawer : IGameDrawer
             13 => "K",
             _ => rank.ToString()
         };
-        await ctx.SetFontAsync("bold 16px sans-serif");
-        await ctx.FillTextAsync($"{rankStr}", rect.X + 4, rect.Y + rect.H / 2 - 40);
 
-        // Add upside-down rank and suit in the bottom right corner
-        await ctx.SetFontAsync("bold 16px sans-serif");
-        await ctx.FillTextAsync($"{rankStr}", rect.X + rect.W - 16, rect.Y + rect.H - 4);
-        await ctx.FillTextAsync($"{suitGlyph}", rect.X + rect.W - 16, rect.Y + rect.H - 20);
+        // All four corner marks share one font, so set it once rather than per mark.
+        await Font("bold 16px sans-serif");
+        await ctx.FillTextAsync(rankStr, rect.X + 4, rect.Y + rect.H / 2 - 40);
+        await ctx.FillTextAsync(suitGlyph, rect.X + 4, rect.Y + rect.H / 2 - 20);
+        await ctx.FillTextAsync(suitGlyph, rect.X + rect.W - 16, rect.Y + rect.H - 20);
+        await ctx.FillTextAsync(rankStr, rect.X + rect.W - 16, rect.Y + rect.H - 4);
 
         // Add big suit glyph in the center of the card
-        await ctx.SetFontAsync("bold 32px sans-serif");
-        await ctx.FillTextAsync($"{suitGlyph}", rect.X + rect.W / 2 - 8, rect.Y + rect.H / 2 + 12);
+        await Font("bold 32px sans-serif");
+        await ctx.FillTextAsync(suitGlyph, rect.X + rect.W / 2 - 8, rect.Y + rect.H / 2 + 12);
+    }
+
+    private async ValueTask Fill(string style)
+    {
+        if (fillStyle == style)
+        {
+            return;
+        }
+
+        fillStyle = style;
+        await ctx.SetFillStyleAsync(style);
+    }
+
+    private async ValueTask Stroke(string style)
+    {
+        if (strokeStyle == style)
+        {
+            return;
+        }
+
+        strokeStyle = style;
+        await ctx.SetStrokeStyleAsync(style);
+    }
+
+    private async ValueTask Font(string value)
+    {
+        if (font == value)
+        {
+            return;
+        }
+
+        font = value;
+        await ctx.SetFontAsync(value);
     }
 }

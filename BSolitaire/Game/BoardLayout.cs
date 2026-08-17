@@ -70,10 +70,11 @@ public sealed class BoardLayout
     {
         foreach (var kind in DropTargetKinds)
         {
-            for (int pileIndex = 0; pileIndex < PileCount(board, kind); pileIndex++)
+            int pileCount = board.PileCountOf(kind);
+            for (int pileIndex = 0; pileIndex < pileCount; pileIndex++)
             {
                 var location = new Location(kind, pileIndex);
-                var pile = PileAt(board, location);
+                var pile = board.Pile(location);
                 var slot = EmptySlot(location);
 
                 // A tableau column runs to the bottom of the board; everything else
@@ -95,44 +96,19 @@ public sealed class BoardLayout
         return false;
     }
 
-    private static List<Card> PileAt(Board board, Location loc) => loc.Kind switch
-    {
-        PileKind.FaceDown => board.FaceDownPile,
-        PileKind.FaceUp => board.FaceUpPile,
-        PileKind.Foundation => board.FoundationPiles[loc.PileIndex],
-        PileKind.Tableau => board.TableauPiles[loc.PileIndex],
-        _ => throw new ArgumentOutOfRangeException(nameof(loc), loc.Kind, null)
-    };
-
-    private static int PileCount(Board board, PileKind kind) => kind switch
-    {
-        PileKind.Foundation => board.FoundationPiles.Length,
-        PileKind.Tableau => board.TableauPiles.Length,
-        _ => 1
-    };
-
     public bool TryHitTest(Board board, double x, double y, out Location loc, out int indexInPile)
     {
-        foreach (var kind in Enum.GetValues<PileKind>())
+        foreach (var kind in Board.AllKinds)
         {
-            var piles = kind switch
+            int pileCount = board.PileCountOf(kind);
+            for (int pileIndex = 0; pileIndex < pileCount; pileIndex++)
             {
-                PileKind.FaceDown => new[] { board.FaceDownPile },
-                PileKind.FaceUp => new[] { board.FaceUpPile },
-                PileKind.Foundation => board.FoundationPiles,
-                PileKind.Tableau => board.TableauPiles,
-                _ => throw new ArgumentOutOfRangeException()
-            };
-
-            for (int pileIndex = 0; pileIndex < piles.Length; pileIndex++)
-            {
-                var pile = piles[pileIndex];
+                var location = new Location(kind, pileIndex);
+                var pile = board.Pile(location);
 
                 if (pile.Count == 0)
                 {
-                    var location = new Location(kind, pileIndex);
-                    var rect = EmptySlot(location);
-                    if (x >= rect.X && x <= rect.X + rect.W && y >= rect.Y && y <= rect.Y + rect.H)
+                    if (EmptySlot(location).Contains(x, y))
                     {
                         loc = location;
                         indexInPile = -1;
@@ -142,9 +118,7 @@ public sealed class BoardLayout
 
                 for (int cardIndex = pile.Count - 1; cardIndex >= 0; cardIndex--)
                 {
-                    var location = new Location(kind, pileIndex);
-                    var rect = CardRect(location, cardIndex);
-                    if (x >= rect.X && x <= rect.X + rect.W && y >= rect.Y && y <= rect.Y + rect.H)
+                    if (CardRect(location, cardIndex).Contains(x, y))
                     {
                         loc = location;
                         indexInPile = cardIndex;

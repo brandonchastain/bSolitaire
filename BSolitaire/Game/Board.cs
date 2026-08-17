@@ -13,6 +13,28 @@ public class Board
     public List<Card>[] FoundationPiles { get; } = new List<Card>[NumFoundationPiles]; // Index 0: Clubs, 1: Diamonds, 2: Hearts, 3: Spades
     public List<Card>[] TableauPiles { get; } = new List<Card>[NumTableauPiles]; // Index 0-6: Tableau piles
 
+    /// <summary>Every pile kind. Cached because Enum.GetValues allocates, and the
+    /// draw loop and hit test both walk this on every frame and every pointer event.</summary>
+    public static readonly PileKind[] AllKinds = Enum.GetValues<PileKind>();
+
+    /// <summary>The cards in a pile.</summary>
+    public List<Card> Pile(Location loc) => loc.Kind switch
+    {
+        PileKind.FaceDown => FaceDownPile,
+        PileKind.FaceUp => FaceUpPile,
+        PileKind.Foundation => FoundationPiles[loc.PileIndex],
+        PileKind.Tableau => TableauPiles[loc.PileIndex],
+        _ => throw new ArgumentOutOfRangeException(nameof(loc), loc.Kind, null)
+    };
+
+    /// <summary>How many piles of this kind the board has.</summary>
+    public int PileCountOf(PileKind kind) => kind switch
+    {
+        PileKind.Foundation => NumFoundationPiles,
+        PileKind.Tableau => NumTableauPiles,
+        _ => 1
+    };
+
     public Board()
     {
         for (int i = 0; i < NumFoundationPiles; i++)
