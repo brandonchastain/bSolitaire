@@ -12,6 +12,9 @@ public class Solitaire
 {
     private readonly PointerInput input;
 
+    private Solver? solver;
+    private int analysedVersion = -1;
+
     public Solitaire()
     {
         Board = new Board();
@@ -51,8 +54,49 @@ public class Solitaire
 
     public void Resize(double width, double height) => Guarded(() => Layout.Resize(width, height));
 
-    /// <summary>Called once per animation frame, before the drawer runs.</summary>
-    public void Update(TimeSpan elapsed) => Elapsed = elapsed;
+    /// <summary>
+    /// Positions examined per frame. Small enough that the slice disappears into a frame's
+    /// budget on a phone, which matters more than finishing quickly — nobody is waiting for
+    /// this answer, and a dropped frame while dragging a card would be obvious.
+    /// </summary>
+    private const int SearchSlice = 1500;
+
+    /// <summary>How the search on the current position is going. Null before it starts.</summary>
+    public SolveResult Analysis => solver?.Result ?? SolveResult.Searching;
+
+    /// <summary>Positions the search has examined on the current board.</summary>
+    public int AnalysisNodes => solver?.Nodes ?? 0;
+
+    /// <summary>
+    /// Called once per animation frame, before the drawer runs. This is where the search gets
+    /// its time: a slice per frame, spread over however many frames it takes, so proving a
+    /// deal dead costs the player nothing they can feel. The board is idle between moves
+    /// anyway — the frame loop is already running and drawing nothing.
+    /// </summary>
+    public void Update(TimeSpan elapsed)
+    {
+        Elapsed = elapsed;
+
+        // A move invalidates whatever the search was working on; start again on the new
+        // position. Restarting rather than repairing is the honest thing: a move can turn a
+        // lost position into a won one and vice versa.
+        if (analysedVersion != Board.Version)
+        {
+            analysedVersion = Board.Version;
+            solver = Board.State == GameState.Playing ? new Solver(Board) : null;
+        }
+
+        if (solver == null || solver.Done)
+        {
+            return;
+        }
+
+        if (solver.Step(SearchSlice) && solver.Result == SolveResult.Unwinnable)
+        {
+            Board.MarkUnwinnable();
+            NeedsRedraw = true;
+        }
+    }
 
     public void OnPointerDown(double x, double y) => Guarded(() => input.Down(x, y));
 

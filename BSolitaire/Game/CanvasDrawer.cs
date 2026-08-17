@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Blazor.Extensions.Canvas.Canvas2D;
 
 namespace BSolitaire.Game;
@@ -130,7 +130,7 @@ public class CanvasDrawer : IGameDrawer
 
         if (game.ShowStats)
         {
-            await DrawStats(layout);
+            await DrawStats(layout, game.Analysis, game.AnalysisNodes);
         }
 
         await ctx.EndBatchAsync();
@@ -159,19 +159,22 @@ public class CanvasDrawer : IGameDrawer
         await Stroke("#e8f0e8");
         await ctx.StrokeRectAsync(panel.X, panel.Y, panel.W, panel.H);
 
+        // The two ways of losing are different claims and are worth wording differently:
+        // one is "nothing can move", the other is "moves remain but none of them wins".
+        (string headline, string detail) = state switch
+        {
+            GameState.Won => ("You win!", "All 52 cards are home."),
+            GameState.Stuck => ("No moves left", "Nothing on the board can move."),
+            _ => ("This deal is lost", "No line from here wins."),
+        };
+
         await Fill("#e8f0e8");
         await Font($"bold {panel.H * 0.19:F0}px sans-serif");
         await Align("center");
-        await ctx.FillTextAsync(
-            state == GameState.Won ? "You win!" : "No moves left",
-            panel.X + panel.W / 2,
-            panel.Y + panel.H * 0.3);
+        await ctx.FillTextAsync(headline, panel.X + panel.W / 2, panel.Y + panel.H * 0.3);
 
         await Font($"{panel.H * 0.12:F0}px sans-serif");
-        await ctx.FillTextAsync(
-            state == GameState.Won ? "All 52 cards are home." : "This deal can't be finished.",
-            panel.X + panel.W / 2,
-            panel.Y + panel.H * 0.46);
+        await ctx.FillTextAsync(detail, panel.X + panel.W / 2, panel.Y + panel.H * 0.46);
 
         await Fill("#0b6b3a");
         await ctx.FillRectAsync(button.X, button.Y, button.W, button.H);
@@ -190,7 +193,7 @@ public class CanvasDrawer : IGameDrawer
     /// skips drawing when nothing changed, so it reads zero on an idle board and only
     /// means anything while something is moving.
     /// </summary>
-    private async ValueTask DrawStats(BoardLayout layout)
+    private async ValueTask DrawStats(BoardLayout layout, SolveResult analysis, int nodes)
     {
         double now = clock.Elapsed.TotalMilliseconds;
         while (recentDraws.Count > 0 && now - recentDraws.Peek() > 1000)
@@ -204,7 +207,10 @@ public class CanvasDrawer : IGameDrawer
         await Fill("#e8f0e8");
         await Font("bold 14px monospace");
         await Align("left");
-        await ctx.FillTextAsync($"{lastDrawMs,5:F1} ms   {recentDraws.Count,3} draws/s", 8, layout.Height - 8);
+        await ctx.FillTextAsync(
+            $"{lastDrawMs,5:F1} ms   {recentDraws.Count,3} draws/s   search {analysis} {nodes,7:N0}",
+            8,
+            layout.Height - 8);
     }
 
     private async ValueTask DrawCard(Card card, Rect rect)

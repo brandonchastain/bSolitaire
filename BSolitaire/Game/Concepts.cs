@@ -12,8 +12,17 @@ public enum GameState
     /// <summary>All fifty-two cards are on the foundations.</summary>
     Won,
 
-    /// <summary>No legal move remains, so the game cannot be finished from here.</summary>
-    Stuck
+    /// <summary>
+    /// No legal move remains at all — there is nothing left to drag anywhere. This is about
+    /// the position being frozen, not about whether it could ever have been won.
+    /// </summary>
+    Stuck,
+
+    /// <summary>
+    /// Moves remain, but a search has proved that none of them leads to a finished board.
+    /// Strictly worse news than <see cref="Stuck"/>, and much harder to establish.
+    /// </summary>
+    Unwinnable
 }
 
 public enum PileKind

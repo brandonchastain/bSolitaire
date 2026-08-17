@@ -45,6 +45,25 @@ public class Board
     /// </summary>
     public GameState State { get; private set; }
 
+    /// <summary>
+    /// Bumped every time the position changes. Lets anything doing slow work about a position
+    /// — the solver — notice that the board moved out from under it.
+    /// </summary>
+    public int Version { get; private set; }
+
+    /// <summary>
+    /// Records that a search proved this position cannot be won. Only the search can know
+    /// this, so it is told to the board rather than worked out by it. Ignored once a game has
+    /// ended, and undone by the next move.
+    /// </summary>
+    public void MarkUnwinnable()
+    {
+        if (State == GameState.Playing)
+        {
+            State = GameState.Unwinnable;
+        }
+    }
+
     /// <summary>Shuffles a new deck and deals it. The old game is simply dropped.</summary>
     public void Reset()
     {
@@ -63,6 +82,7 @@ public class Board
 
         Dealer.Deal(FaceDownPile, TableauPiles);
         State = GameState.Playing;
+        Version++;
     }
 
     /// <summary>The cards in a pile.</summary>
@@ -164,6 +184,8 @@ public class Board
     /// </summary>
     private void RefreshState()
     {
+        Version++;
+
         foreach (var pile in FoundationPiles)
         {
             if (pile.Count < FoundationSize)
