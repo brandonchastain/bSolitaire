@@ -1,4 +1,4 @@
-﻿namespace BSolitaire.Game;
+namespace BSolitaire.Game;
 
 /// <summary>What a search found out about a position.</summary>
 public enum SolveResult
@@ -16,38 +16,61 @@ public enum SolveResult
     Unknown
 }
 
+/// <summary>How much the search is allowed to spend before it gives up and answers Unknown.</summary>
+public readonly record struct SolverBudget(int States, int Nodes)
+{
+    /// <summary>
+    /// Sized to answer within a second or two of idle time, because this runs after every
+    /// single move rather than on request.
+    ///
+    /// The cost is lopsided: a position that resolves does so quickly, while one that does not
+    /// has to spend the entire budget before it is allowed to say Unknown. So the budget is
+    /// really a cap on the *unresolvable* case, and a generous one buys a few more answers at
+    /// the price of making every hard position expensive — on a phone, repeatedly, for a game
+    /// that is otherwise idle. Small and quick beats thorough and late here: the positions a
+    /// player cares about are late ones, and those resolve easily.
+    ///
+    /// Measured over 300 positions sampled from played-out deals: 71% of openings resolve,
+    /// rising to 95% by eight cards home and 100% by twelve, where the answer arrives in
+    /// single-digit milliseconds. Raising this to 400k buys eight points in the opening for
+    /// six times the work, and nothing at all anywhere it matters.
+    /// </summary>
+    public static readonly SolverBudget Default = new(60_000, 400_000);
+
+    /// <summary>For checking a verdict rather than producing one. Far past what a game uses.</summary>
+    public static readonly SolverBudget Thorough = new(2_000_000, 20_000_000);
+}
+
 /// <summary>
 /// Searches a deal for a line that finishes it.
 ///
 /// The player cannot see the face-down cards, but the program can, so this asks the
 /// full-information question — "is this deal still winnable by someone who knows where every
-/// card is" — which is decidable, unlike the question the player faces. Klondike's state
-/// space is far too big to walk naively, so the search leans on three things: positions are
-/// canonicalised and memoised, cards that can never be needed again are sent home without
-/// branching, and no-op moves are not generated at all.
+/// card is" — which is decidable, unlike the question the player faces. The state space is
+/// finite and every expanded position is remembered, so the search always terminates on its
+/// own; the budget is about how long and how much memory that is allowed to take, not about
+/// making it stop.
 ///
-/// It is deliberately budgeted and resumable: <see cref="Step"/> does a slice of work and
-/// returns, so the search rides along on the frame loop instead of freezing the board.
-/// Running out of budget yields <see cref="SolveResult.Unknown"/>, never a wrong answer —
-/// <see cref="SolveResult.Unwinnable"/> is only ever reported after the entire tree below the
-/// position has been examined.
+/// It is resumable: <see cref="Step"/> does a slice of work and returns, so the search rides
+/// along on the frame loop instead of freezing the board. Running out of budget yields
+/// <see cref="SolveResult.Unknown"/>, never a wrong answer — <see cref="SolveResult.Unwinnable"/>
+/// is only ever reported after the entire tree below the position has been examined.
 /// </summary>
 public sealed class Solver
 {
-    /// <summary>Positions examined before the search gives up and answers Unknown.</summary>
-    public const int DefaultNodeCap = 250_000;
-
     private const int Suits = 4;
     private const int Piles = 7;
 
+    /// <summary>
+    /// Room for the longest tableau pile there can be: six face-down cards under a king-to-ace
+    /// run. Rounded up, because the cost of a few spare bytes is nothing next to a bounds check
+    /// on every card copied.
+    /// </summary>
+    private const int PileCap = 24;
+
     private readonly Stack<Frame> stack = new();
-
-    // Canonical hashes of positions already expanded. A 64-bit hash rather than the position
-    // itself: at a quarter of a million states the table would otherwise dominate the browser
-    // tab's memory, and a collision costs a pruned branch, not a wrong answer about a win.
-    private readonly HashSet<ulong> seen = new();
-
-    private readonly int nodeCap;
+    private readonly Seen seen;
+    private readonly SolverBudget budget;
     private readonly bool autoplay;
 
     /// <param name="autoplay">
@@ -56,10 +79,11 @@ public sealed class Solver
     /// it is the one prune that could in principle hide a win, so it can be cross-checked:
     /// a position called unwinnable with it on must still be unwinnable with it off.
     /// </param>
-    public Solver(Board board, int nodeCap = DefaultNodeCap, bool autoplay = true)
+    public Solver(Board board, SolverBudget? budget = null, bool autoplay = true)
     {
-        this.nodeCap = nodeCap;
+        this.budget = budget ?? SolverBudget.Default;
         this.autoplay = autoplay;
+        seen = new Seen(this.budget.States);
 
         var root = Position.From(board);
         if (root.IsWon)
@@ -76,6 +100,9 @@ public sealed class Solver
 
     /// <summary>Positions examined so far.</summary>
     public int Nodes { get; private set; }
+
+    /// <summary>Distinct positions being remembered, which is what the memory goes on.</summary>
+    public int States => seen.Count;
 
     public bool Done => Result != SolveResult.Searching;
 
@@ -119,7 +146,7 @@ public sealed class Solver
                 return true;
             }
 
-            if (Nodes >= nodeCap)
+            if (Nodes >= budget.Nodes || seen.Full)
             {
                 Result = SolveResult.Unknown;
                 return true;
@@ -154,7 +181,7 @@ public sealed class Solver
         // finding them early ends winnable searches sooner.
         for (int i = 0; i < Piles; i++)
         {
-            if (p.Length[i] > p.Down[i] && p.CanFound(p.Top(i)))
+            if (p.Length(i) > p.Down(i) && p.CanFound(p.Top(i)))
             {
                 children.Add(p.MoveToFoundation(i));
             }
@@ -172,9 +199,9 @@ public sealed class Solver
         // a pile is always a properly ordered run.
         for (int from = 0; from < Piles; from++)
         {
-            for (int at = p.Down[from]; at < p.Length[from]; at++)
+            for (int at = p.Down(from); at < p.Length(from); at++)
             {
-                byte moving = p.Cards[from][at];
+                byte moving = p.CardAt(from, at);
 
                 for (int to = 0; to < Piles; to++)
                 {
@@ -183,7 +210,7 @@ public sealed class Solver
                         continue;
                     }
 
-                    if (p.Length[to] == 0)
+                    if (p.Length(to) == 0)
                     {
                         // A king onto an empty column is only progress if it uncovers
                         // something. Moving a whole column into an empty one just swaps
@@ -212,7 +239,7 @@ public sealed class Solver
 
             for (int to = 0; to < Piles; to++)
             {
-                if (p.Length[to] == 0 ? RankOf((byte)card) == 13 : Stacks((byte)card, p.Top(to)))
+                if (p.Length(to) == 0 ? RankOf((byte)card) == 13 : Stacks((byte)card, p.Top(to)))
                 {
                     children.Add(p.DeckToPile((byte)card, to));
                 }
@@ -224,15 +251,15 @@ public sealed class Solver
         // it, so it has to be here.
         for (int suit = 0; suit < Suits; suit++)
         {
-            if (p.Foundation[suit] == 0)
+            if (p.Foundation(suit) == 0)
             {
                 continue;
             }
 
-            byte card = MakeCard(suit, p.Foundation[suit]);
+            byte card = MakeCard(suit, p.Foundation(suit));
             for (int to = 0; to < Piles; to++)
             {
-                if (p.Length[to] > 0 && Stacks(card, p.Top(to)))
+                if (p.Length(to) > 0 && Stacks(card, p.Top(to)))
                 {
                     children.Add(p.FoundationToPile(suit, to));
                 }
@@ -245,14 +272,14 @@ public sealed class Solver
     /// <summary>
     /// Finds a card that can be sent to its foundation and never wanted back. A card of rank
     /// r is safe once both opposite-colour foundations have reached r-1 — nothing lower of the
-    /// opposite colour is still looking for a black or red base to sit on — and the other
-    /// foundation of its own colour has reached r-2. Aces and twos are always safe.
+    /// opposite colour is still looking for a base to sit on — and the other foundation of its
+    /// own colour has reached r-2. Aces and twos are always safe.
     /// </summary>
     private static bool TryAutoplay(Position p, out Position result)
     {
         for (int i = 0; i < Piles; i++)
         {
-            if (p.Length[i] > p.Down[i] && p.CanFound(p.Top(i)) && IsSafe(p, p.Top(i)))
+            if (p.Length(i) > p.Down(i) && p.CanFound(p.Top(i)) && IsSafe(p, p.Top(i)))
             {
                 result = p.MoveToFoundation(i);
                 return true;
@@ -294,11 +321,11 @@ public sealed class Solver
 
             if (IsRed(s) == red)
             {
-                otherSameColour = p.Foundation[s];
+                otherSameColour = p.Foundation(s);
             }
             else
             {
-                lowestOpposite = Math.Min(lowestOpposite, p.Foundation[s]);
+                lowestOpposite = Math.Min(lowestOpposite, p.Foundation(s));
             }
         }
 
@@ -330,41 +357,142 @@ public sealed class Solver
     }
 
     /// <summary>
-    /// A board, stripped to what the search needs. The stock and waste collapse into one
-    /// unordered set: the game deals one card at a time and recycles without limit, so every
-    /// card down there can be brought to the top without disturbing anything else, which makes
-    /// their order carry no information.
+    /// The set of positions already expanded, as an open-addressed table of raw hashes.
+    ///
+    /// A HashSet&lt;ulong&gt; costs about thirty bytes per entry once its buckets, slot links
+    /// and free-list are counted, and every one of those entries is a garbage-collected object
+    /// graph the collector must walk. This is one flat array: eight bytes per slot, a little
+    /// over eleven per position at the load factor below, and nothing for the collector to
+    /// trace. That difference is most of what decides how many positions can be held, and
+    /// therefore how often the search gets to finish.
+    /// </summary>
+    private sealed class Seen
+    {
+        // Empty slots hold zero, so a hash that happens to be zero is stored as one. Two
+        // positions colliding costs a re-expansion, not a wrong answer.
+        private const ulong Empty = 0;
+
+        private readonly int capacity;
+        private ulong[] slots;
+        private int mask;
+
+        public Seen(int capacity)
+        {
+            this.capacity = Math.Max(1024, capacity);
+
+            int initial = 1 << 16;
+            while (initial > this.capacity)
+            {
+                initial >>= 1;
+            }
+
+            slots = new ulong[initial];
+            mask = initial - 1;
+        }
+
+        public int Count { get; private set; }
+
+        /// <summary>True once the table is as big as it is allowed to get and nearly full.</summary>
+        public bool Full { get; private set; }
+
+        public bool Add(ulong hash)
+        {
+            if (hash == Empty)
+            {
+                hash = 1;
+            }
+
+            int i = (int)(hash & (ulong)mask);
+            while (slots[i] != Empty)
+            {
+                if (slots[i] == hash)
+                {
+                    return false;
+                }
+
+                i = (i + 1) & mask;
+            }
+
+            slots[i] = hash;
+            Count++;
+
+            // Linear probing degrades badly past about seventy percent occupancy.
+            if (Count * 10 >= slots.Length * 7)
+            {
+                Grow();
+            }
+
+            return true;
+        }
+
+        private void Grow()
+        {
+            if (slots.Length >= capacity)
+            {
+                Full = true;
+                return;
+            }
+
+            var older = slots;
+            slots = new ulong[older.Length << 1];
+            mask = slots.Length - 1;
+
+            foreach (var hash in older)
+            {
+                if (hash == Empty)
+                {
+                    continue;
+                }
+
+                int i = (int)(hash & (ulong)mask);
+                while (slots[i] != Empty)
+                {
+                    i = (i + 1) & mask;
+                }
+
+                slots[i] = hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// A board, stripped to what the search needs, in one flat array.
+    ///
+    /// The stock and waste collapse into a single unordered set: the game deals one card at a
+    /// time and recycles without limit, so every card down there can be brought to the top
+    /// without disturbing anything else, which makes their order carry no information.
+    ///
+    /// One array rather than a jagged one because a position is cloned for every child
+    /// generated — millions of times — and eight allocations per clone is eight times the work
+    /// for the allocator and the collector.
     /// </summary>
     private sealed class Position
     {
-        public byte[][] Cards = null!;  // per pile, bottom to top
-        public int[] Length = null!;
-        public int[] Down = null!;      // how many of the pile's cards are face down
-        public byte[] Foundation = null!; // by suit: highest rank home, 0 for empty
-        public ulong Deck;              // cards still in the stock or waste
+        private const int LengthAt = Piles * PileCap;
+        private const int DownAt = LengthAt + Piles;
+        private const int FoundationAt = DownAt + Piles;
+        private const int Size = FoundationAt + Suits;
+
+        private byte[] data = null!;
+
+        /// <summary>Cards still in the stock or waste.</summary>
+        public ulong Deck;
 
         public static Position From(Board board)
         {
-            var p = new Position
-            {
-                Cards = new byte[Piles][],
-                Length = new int[Piles],
-                Down = new int[Piles],
-                Foundation = new byte[Suits],
-            };
+            var p = new Position { data = new byte[Size] };
 
             for (int i = 0; i < Piles; i++)
             {
                 var pile = board.TableauPiles[i];
-                p.Cards[i] = new byte[52];
-                p.Length[i] = pile.Count;
+                p.data[LengthAt + i] = (byte)pile.Count;
 
                 for (int j = 0; j < pile.Count; j++)
                 {
-                    p.Cards[i][j] = Encode(pile[j]);
+                    p.data[i * PileCap + j] = Encode(pile[j]);
                     if (!pile[j].IsFaceUp)
                     {
-                        p.Down[i] = j + 1;
+                        p.data[DownAt + i] = (byte)(j + 1);
                     }
                 }
             }
@@ -373,7 +501,7 @@ public sealed class Solver
             {
                 if (pile.Count > 0)
                 {
-                    p.Foundation[(int)pile[^1].Suit] = (byte)(int)pile[^1].Rank;
+                    p.data[FoundationAt + (int)pile[^1].Suit] = (byte)(int)pile[^1].Rank;
                 }
             }
 
@@ -392,40 +520,31 @@ public sealed class Solver
 
         private static byte Encode(Card card) => (byte)((int)card.Suit * 13 + (int)card.Rank - 1);
 
-        public bool IsWon =>
-            Foundation[0] == 13 && Foundation[1] == 13 && Foundation[2] == 13 && Foundation[3] == 13;
+        public int Length(int pile) => data[LengthAt + pile];
 
-        public byte Top(int pile) => Cards[pile][Length[pile] - 1];
+        public int Down(int pile) => data[DownAt + pile];
+
+        public int Foundation(int suit) => data[FoundationAt + suit];
+
+        public byte CardAt(int pile, int index) => data[pile * PileCap + index];
+
+        public byte Top(int pile) => data[pile * PileCap + Length(pile) - 1];
+
+        public bool IsWon =>
+            Foundation(0) == 13 && Foundation(1) == 13 && Foundation(2) == 13 && Foundation(3) == 13;
 
         public bool InDeck(int card) => (Deck & (1UL << card)) != 0;
 
-        public bool CanFound(byte card) => Foundation[SuitOf(card)] == RankOf(card) - 1;
+        public bool CanFound(byte card) => Foundation(SuitOf(card)) == RankOf(card) - 1;
 
-        public Position Clone()
-        {
-            var c = new Position
-            {
-                Cards = new byte[Piles][],
-                Length = (int[])Length.Clone(),
-                Down = (int[])Down.Clone(),
-                Foundation = (byte[])Foundation.Clone(),
-                Deck = Deck,
-            };
-
-            for (int i = 0; i < Piles; i++)
-            {
-                c.Cards[i] = (byte[])Cards[i].Clone();
-            }
-
-            return c;
-        }
+        private Position Clone() => new() { data = (byte[])data.Clone(), Deck = Deck };
 
         public Position MoveToFoundation(int pile)
         {
             var c = Clone();
-            byte card = c.Cards[pile][c.Length[pile] - 1];
-            c.Foundation[SuitOf(card)] = (byte)RankOf(card);
-            c.Length[pile]--;
+            byte card = Top(pile);
+            c.data[FoundationAt + SuitOf(card)] = (byte)RankOf(card);
+            c.data[LengthAt + pile]--;
             c.Reveal(pile);
             return c;
         }
@@ -433,7 +552,7 @@ public sealed class Solver
         public Position DeckToFoundation(byte card)
         {
             var c = Clone();
-            c.Foundation[SuitOf(card)] = (byte)RankOf(card);
+            c.data[FoundationAt + SuitOf(card)] = (byte)RankOf(card);
             c.Deck &= ~(1UL << card);
             return c;
         }
@@ -441,7 +560,8 @@ public sealed class Solver
         public Position DeckToPile(byte card, int pile)
         {
             var c = Clone();
-            c.Cards[pile][c.Length[pile]++] = card;
+            c.data[pile * PileCap + c.Length(pile)] = card;
+            c.data[LengthAt + pile]++;
             c.Deck &= ~(1UL << card);
             return c;
         }
@@ -449,24 +569,26 @@ public sealed class Solver
         public Position FoundationToPile(int suit, int pile)
         {
             var c = Clone();
-            byte card = Solver.MakeCard(suit, c.Foundation[suit]);
-            c.Foundation[suit]--;
-            c.Cards[pile][c.Length[pile]++] = card;
+            byte card = MakeCard(suit, c.Foundation(suit));
+            c.data[FoundationAt + suit]--;
+            c.data[pile * PileCap + c.Length(pile)] = card;
+            c.data[LengthAt + pile]++;
             return c;
         }
 
         public Position MoveRun(int from, int at, int to)
         {
             var c = Clone();
-            int count = c.Length[from] - at;
+            int count = Length(from) - at;
+            int target = Length(to);
 
             for (int i = 0; i < count; i++)
             {
-                c.Cards[to][c.Length[to] + i] = c.Cards[from][at + i];
+                c.data[to * PileCap + target + i] = data[from * PileCap + at + i];
             }
 
-            c.Length[to] += count;
-            c.Length[from] = at;
+            c.data[LengthAt + to] = (byte)(target + count);
+            c.data[LengthAt + from] = (byte)at;
             c.Reveal(from);
             return c;
         }
@@ -479,13 +601,13 @@ public sealed class Solver
         /// </summary>
         private void Reveal(int pile)
         {
-            if (Length[pile] == 0)
+            if (Length(pile) == 0)
             {
-                Down[pile] = 0;
+                data[DownAt + pile] = 0;
             }
-            else if (Down[pile] >= Length[pile])
+            else if (Down(pile) >= Length(pile))
             {
-                Down[pile] = Length[pile] - 1;
+                data[DownAt + pile] = (byte)(Length(pile) - 1);
             }
         }
 
@@ -501,11 +623,12 @@ public sealed class Solver
             for (int i = 0; i < Piles; i++)
             {
                 ulong h = 14695981039346656037UL;
-                Mix(ref h, (byte)Down[i]);
+                Mix(ref h, (byte)Down(i));
 
-                for (int j = 0; j < Length[i]; j++)
+                int end = i * PileCap + Length(i);
+                for (int j = i * PileCap; j < end; j++)
                 {
-                    Mix(ref h, Cards[i][j]);
+                    Mix(ref h, data[j]);
                 }
 
                 perPile[i] = h;
@@ -536,7 +659,7 @@ public sealed class Solver
 
             for (int s = 0; s < Suits; s++)
             {
-                Mix(ref hash, Foundation[s]);
+                Mix(ref hash, (byte)Foundation(s));
             }
 
             for (int b = 0; b < 8; b++)

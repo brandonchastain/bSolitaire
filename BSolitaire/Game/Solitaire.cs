@@ -1,4 +1,4 @@
-namespace BSolitaire.Game;
+﻿namespace BSolitaire.Game;
 
 /// <summary>
 /// One game session, and the only object the host component and the drawer talk to.
@@ -55,17 +55,21 @@ public class Solitaire
     public void Resize(double width, double height) => Guarded(() => Layout.Resize(width, height));
 
     /// <summary>
-    /// Positions examined per frame. Small enough that the slice disappears into a frame's
-    /// budget on a phone, which matters more than finishing quickly — nobody is waiting for
-    /// this answer, and a dropped frame while dragging a card would be obvious.
+    /// Positions examined per frame. Big enough that a whole budget is spent in a second or
+    /// two of idle time — the answer is wanted while the player is still looking at the move
+    /// that caused it — and small enough to disappear into a frame on a phone. A dropped frame
+    /// mid-drag would be far more obvious than a verdict arriving a moment later.
     /// </summary>
-    private const int SearchSlice = 1500;
+    private const int SearchSlice = 8000;
 
     /// <summary>How the search on the current position is going. Null before it starts.</summary>
     public SolveResult Analysis => solver?.Result ?? SolveResult.Searching;
 
     /// <summary>Positions the search has examined on the current board.</summary>
     public int AnalysisNodes => solver?.Nodes ?? 0;
+
+    /// <summary>Distinct positions the search is holding on to.</summary>
+    public int AnalysisStates => solver?.States ?? 0;
 
     /// <summary>
     /// Called once per animation frame, before the drawer runs. This is where the search gets
