@@ -15,6 +15,11 @@ public class Solitaire
     private Solver? solver;
     private int analysedVersion = -1;
 
+    private bool fastForwarding;
+    private bool pressConsumed;
+    private int framesUntilNextCard;
+    private int stepsWithoutProgress;
+
     public Solitaire()
     {
         Board = new Board();
@@ -30,6 +35,14 @@ public class Solitaire
     /// <summary>The stack currently held by the pointer, or null.</summary>
     public DragState? Drag => input.Drag;
 
+    /// <summary>The pile the pointer is resting on and could pick up from, or null. Hidden
+    /// while the board is playing itself out — nothing there is grabbable.</summary>
+    public Location? HoverPile => fastForwarding ? null : input.HoverPile;
+
+    /// <summary>Index of the lowest card the pointer would pick up from
+    /// <see cref="HoverPile"/>.</summary>
+    public int HoverIndex => input.HoverIndex;
+
     /// <summary>Whether the game is still going, and if not, how it ended.</summary>
     public GameState State => Board.State;
 
@@ -43,6 +56,15 @@ public class Solitaire
     /// </summary>
     public bool NeedsRedraw { get; private set; } = true;
 
+    /// <summary>
+    /// Whether the board is offering to play the rest of the game out. False while it is
+    /// already doing so — the offer and the act are never both on screen.
+    /// </summary>
+    public bool CanFastForward => Board.CanFastForward && !fastForwarding && Drag == null;
+
+    /// <summary>Whether the rest of the game is currently playing itself out.</summary>
+    public bool IsFastForwarding => fastForwarding;
+
     /// <summary>Whether the draw-time overlay is shown. Toggled with F.</summary>
     public bool ShowStats { get; private set; }
 
@@ -50,15 +72,27 @@ public class Solitaire
     public TimeSpan Elapsed { get; private set; }
 
     /// <summary>Called by the host once the current picture has been drawn.</summary>
-    public void MarkClean() => NeedsRedraw = false;
+    public void MarkClean()
+    {
+        NeedsRedraw = false;
+        Board.ClearDirty();
+    }
 
     public void Resize(double width, double height) => Guarded(() => Layout.Resize(width, height));
 
     /// <summary>
-    /// Positions examined per frame. Big enough that a whole budget is spent in a second or
-    /// two of idle time — the answer is wanted while the player is still looking at the move
-    /// that caused it — and small enough to disappear into a frame on a phone. A dropped frame
-    /// mid-drag would be far more obvious than a verdict arriving a moment later.
+    /// How long the search may run inside one frame. This is the number that decides whether
+    /// the board feels responsive: everything here shares a thread, so whatever the search
+    /// spends is added directly to the frame it runs in. Four milliseconds leaves the rest of
+    /// a sixty-hertz frame free, and unlike a position count it means the same thing on a
+    /// phone as on a desktop — slow hardware takes more frames rather than dropping them.
+    /// </summary>
+    private static readonly TimeSpan SearchBudget = TimeSpan.FromMilliseconds(4);
+
+    /// <summary>
+    /// A ceiling on positions per frame as well, so a machine fast enough to burn the whole
+    /// node budget inside four milliseconds still spreads the work out rather than doing it
+    /// all in one frame.
     /// </summary>
     private const int SearchSlice = 8000;
 
@@ -77,9 +111,24 @@ public class Solitaire
     /// deal dead costs the player nothing they can feel. The board is idle between moves
     /// anyway — the frame loop is already running and drawing nothing.
     /// </summary>
+    /// <summary>
+    /// Frames between cards during a fast-forward. Instant would be a worse answer than fast:
+    /// the player asked to skip the clicking, not to skip seeing the game finish.
+    /// </summary>
+    private const int FramesPerCard = 3;
+
+    /// <summary>
+    /// A stop for a fast-forward that is turning the stock over without ever finding anything
+    /// to play. It cannot happen from a position that offers the button — but the button is
+    /// not the only thing that could ever call it, and a loop that never ends is a worse bug
+    /// than one card left unplayed.
+    /// </summary>
+    private const int StallLimit = 60;
+
     public void Update(TimeSpan elapsed)
     {
         Elapsed = elapsed;
+        AdvanceFastForward();
 
         // A move invalidates whatever the search was working on; start again on the new
         // position. Restarting rather than repairing is the honest thing: a move can turn a
@@ -90,23 +139,108 @@ public class Solitaire
             solver = Board.State == GameState.Playing ? new Solver(Board) : null;
         }
 
-        if (solver == null || solver.Done)
+        // A held stack is the one time the board animates, and the search is the one thing
+        // big enough to be felt inside a frame. Everything is on one thread here, so the
+        // slice and the draw are strictly in series: spending it mid-drag buys an answer
+        // nobody is waiting for at the cost of the only motion the player can see. The
+        // board stops moving the moment the stack is dropped, and the search resumes there.
+        if (solver == null || solver.Done || input.Drag != null || fastForwarding)
         {
             return;
         }
 
-        if (solver.Step(SearchSlice) && solver.Result == SolveResult.Unwinnable)
+        if (solver.Step(SearchSlice, SearchBudget) && solver.Result == SolveResult.Unwinnable)
         {
             Board.MarkUnwinnable();
             NeedsRedraw = true;
         }
     }
 
-    public void OnPointerDown(double x, double y) => Guarded(() => input.Down(x, y));
+    /// <summary>
+    /// Plays one more card home, if a fast-forward is running. Paced across frames, and it
+    /// gives up the moment the board stops making progress or the game ends.
+    /// </summary>
+    private void AdvanceFastForward()
+    {
+        if (!fastForwarding)
+        {
+            return;
+        }
 
-    public void OnPointerUp(double x, double y) => Guarded(() => input.Up(x, y));
+        if (Board.State != GameState.Playing || stepsWithoutProgress > StallLimit)
+        {
+            fastForwarding = false;
+            NeedsRedraw = true;
+            return;
+        }
 
-    public void OnPointerCancel() => Guarded(input.Cancel);
+        if (--framesUntilNextCard > 0)
+        {
+            return;
+        }
+
+        framesUntilNextCard = FramesPerCard;
+
+        int before = Board.FoundationTotal;
+        if (!Guarded(Board.FastForwardStep))
+        {
+            fastForwarding = false;
+            return;
+        }
+
+        // Turning the stock over is a step but not progress. Only cards reaching a
+        // foundation reset the stall count.
+        stepsWithoutProgress = Board.FoundationTotal > before ? 0 : stepsWithoutProgress + 1;
+    }
+
+    /// <summary>Starts playing the rest of the game out. Ignored unless the board is offering
+    /// to — a decided game is the only kind there is nothing to decide about.</summary>
+    public void StartFastForward()
+    {
+        if (!CanFastForward)
+        {
+            return;
+        }
+
+        fastForwarding = true;
+        framesUntilNextCard = 1;
+        stepsWithoutProgress = 0;
+        NeedsRedraw = true;
+    }
+
+    public void OnPointerDown(double x, double y)
+    {
+        // The button sits over the felt, so it has to take the press before the piles get a
+        // look at it. The release that follows has to be swallowed too: PointerInput never
+        // saw the press, and left to itself it would treat the release as a tap at wherever
+        // the last real press happened to be.
+        if (CanFastForward && Layout.FastForwardButton.Contains(x, y))
+        {
+            pressConsumed = true;
+            StartFastForward();
+            return;
+        }
+
+        pressConsumed = false;
+        Guarded(() => input.Down(x, y));
+    }
+
+    public void OnPointerUp(double x, double y)
+    {
+        if (pressConsumed)
+        {
+            pressConsumed = false;
+            return;
+        }
+
+        Guarded(() => input.Up(x, y));
+    }
+
+    public void OnPointerCancel()
+    {
+        pressConsumed = false;
+        Guarded(input.Cancel);
+    }
 
     /// <summary>Double-click at (x, y): a shortcut for sending a card to its foundation.</summary>
     public void OnDoubleClick(double x, double y) => Guarded(() => input.DoubleClick(x, y));
@@ -136,25 +270,37 @@ public class Solitaire
         {
             Reset();
         }
+        else if (code is "Space" or "Enter")
+        {
+            StartFastForward();
+        }
     }
 
     /// <summary>Abandons the current game and deals a new one.</summary>
-    public void Reset() => Guarded(Board.Reset);
+    public void Reset()
+    {
+        fastForwarding = false;
+        Guarded(Board.Reset);
+    }
 
     /// <summary>
     /// Every input entry point funnels through here, so the error boundary and the redraw
     /// flag are each written in exactly one place instead of once per handler.
     /// </summary>
-    private void Guarded(Action action)
+    private void Guarded(Action action) => Guarded(() => { action(); return true; });
+
+    private bool Guarded(Func<bool> action)
     {
         try
         {
-            action();
+            bool result = action();
             Error = null;
+            return result;
         }
         catch (Exception ex)
         {
             Error = ex.ToString();
+            return false;
         }
         finally
         {

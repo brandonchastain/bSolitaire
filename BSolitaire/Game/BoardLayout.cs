@@ -1,4 +1,4 @@
-namespace BSolitaire.Game;
+﻿namespace BSolitaire.Game;
 
 public readonly record struct Rect(double X, double Y, double W, double H)
 {
@@ -55,6 +55,11 @@ public sealed class BoardLayout
     /// <summary>The button inside <see cref="Banner"/> that deals a new game.</summary>
     public Rect NewGameButton { get; private set; }
 
+    /// <summary>The offer to play out a game that is already decided. Sits at the bottom of
+    /// the board, clear of the tableau: by the time it appears the columns have shrunk to the
+    /// runs left over, so nothing it could cover is still there.</summary>
+    public Rect FastForwardButton { get; private set; }
+
     /// <summary>Piles that can be dropped onto. The stock and waste are never drop targets.</summary>
     private static readonly PileKind[] DropTargetKinds = [PileKind.Tableau, PileKind.Foundation];
 
@@ -103,6 +108,10 @@ public sealed class BoardLayout
             Banner.Y + bannerH - buttonH - bannerH * 0.14,
             buttonW,
             buttonH);
+
+        double ffW = Math.Min(width - 2 * gutter, CardWidth * 2.8);
+        double ffH = CardHeight * 0.42;
+        FastForwardButton = new Rect((width - ffW) / 2, height - ffH - gutter * 2, ffW, ffH);
     }
 
     /// <summary>Left edge of one of the seven columns the whole board is built on.</summary>
@@ -123,6 +132,19 @@ public sealed class BoardLayout
             PileKind.Tableau => new Rect(ColumnX(loc.PileIndex), tableauY + indexInPile * FanOffset, CardWidth, CardHeight),
             _ => throw new ArgumentOutOfRangeException(nameof(loc), loc.Kind, null)
         };
+    }
+
+    /// <summary>
+    /// Everything a pile could be covering, which is what has to be cleared and repainted
+    /// when it changes. Tableau columns run to the bottom of the board because a fan can be
+    /// any length; nothing else grows past its slot. Columns never overlap each other, so a
+    /// region can be repainted without disturbing its neighbours.
+    /// </summary>
+    public Rect PileRegion(Location loc)
+    {
+        var slot = EmptySlot(loc);
+        double bottom = loc.Kind == PileKind.Tableau ? Height : slot.Y + slot.H;
+        return new Rect(slot.X - 1, slot.Y - 1, slot.W + 2, Math.Max(slot.H, bottom - slot.Y) + 2);
     }
 
     public Rect EmptySlot(Location loc)

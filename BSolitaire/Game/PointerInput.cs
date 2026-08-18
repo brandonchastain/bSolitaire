@@ -1,4 +1,4 @@
-namespace BSolitaire.Game;
+﻿namespace BSolitaire.Game;
 
 /// <summary>
 /// A stack of cards held by the pointer. The cards are NOT removed from their pile while
@@ -51,6 +51,13 @@ public sealed class PointerInput
     private Location? selected;
     private int selectedCount;
 
+    // What the pointer is resting on, expressed the same way a press would pick it up:
+    // a pile and the index of the lowest card that would come with it. Storing the grab
+    // point rather than the card under the cursor means the highlight shows what would
+    // actually move, which is the thing worth telling the player.
+    private Location? hoverPile;
+    private int hoverIndex = -1;
+
     public PointerInput(Board board, BoardLayout layout)
     {
         this.board = board;
@@ -61,12 +68,20 @@ public sealed class PointerInput
     /// travelled far enough, so a tap never flickers a card off its pile.</summary>
     public DragState? Drag => drag is { Active: true } ? drag : null;
 
+    /// <summary>The pile the pointer is over and could grab from, or null.</summary>
+    public Location? HoverPile => hoverPile;
+
+    /// <summary>Index of the lowest card a press here would take. Meaningless when
+    /// <see cref="HoverPile"/> is null.</summary>
+    public int HoverIndex => hoverIndex;
+
     /// <summary>Pointer pressed at (x, y). Grabs a stack if one is under the pointer.</summary>
     public void Down(double x, double y)
     {
         downX = x;
         downY = y;
         drag = null;
+        ClearHover();
 
         if (OverBanner(x, y))
         {
@@ -104,9 +119,11 @@ public sealed class PointerInput
     /// </summary>
     public bool Move(double x, double y)
     {
+        bool hoverChanged = UpdateHover(x, y);
+
         if (drag == null)
         {
-            return false;
+            return hoverChanged;
         }
 
         drag.X = x;
@@ -119,6 +136,41 @@ public sealed class PointerInput
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Works out what the pointer is resting on. Returns true when that changed, which is
+    /// the only time hovering is worth a redraw — the pointer crosses a card once and then
+    /// spends dozens of frames inside it.
+    /// </summary>
+    private bool UpdateHover(double x, double y)
+    {
+        Location? pile = null;
+        int index = -1;
+
+        if (drag == null &&
+            !OverBanner(x, y) &&
+            layout.TryHitTest(board, x, y, out Location loc, out int indexInPile) &&
+            TryGrab(loc, indexInPile, out _))
+        {
+            pile = loc;
+            index = indexInPile;
+        }
+
+        if (pile == hoverPile && index == hoverIndex)
+        {
+            return false;
+        }
+
+        hoverPile = pile;
+        hoverIndex = index;
+        return true;
+    }
+
+    private void ClearHover()
+    {
+        hoverPile = null;
+        hoverIndex = -1;
     }
 
     /// <summary>Pointer released at (x, y). Drops the held stack, or falls back to a tap.</summary>

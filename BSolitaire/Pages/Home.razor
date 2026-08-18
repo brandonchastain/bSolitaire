@@ -5,7 +5,6 @@
 
 <div id="board" tabindex="0"
      @onpointerdown="HandlePointerDown"
-     @onpointermove="HandlePointerMove"
      @onpointerup="HandlePointerUp"
      @onpointerleave="HandlePointerCancel"
      @onpointercancel="HandlePointerCancel"
@@ -14,12 +13,19 @@
     <BECanvas @ref="canvasRef" />
 </div>
 
+@* The board is redrawn into this off-screen canvas only when the position changes, and
+   blitted from it every frame. It is never shown. *@
+<div id="cache" style="position: absolute; left: -99999px; top: 0; visibility: hidden;">
+    <BECanvas @ref="cacheRef" />
+</div>
+
 @code {
     // The host component owns the plumbing: it wires the JS animation frame
     // loop and browser events to the game, and nothing else.
     private readonly Solitaire game = new();
 
     private BECanvasComponent canvasRef = default!;
+    private BECanvasComponent cacheRef = default!;
     private IGameDrawer? drawer;
     private DotNetObjectReference<Home>? selfRef;
     private bool faulted;
@@ -31,7 +37,11 @@
             return;
         }
 
-        drawer = new CanvasDrawer(await canvasRef.CreateCanvas2DAsync());
+        rendered = true;
+        drawer = new CanvasDrawer(
+            await canvasRef.CreateCanvas2DAsync(),
+            await cacheRef.CreateCanvas2DAsync(),
+            cacheRef.CanvasReference);
         selfRef = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("bSolitaire.start", selfRef);
     }
@@ -40,7 +50,7 @@
     public void OnResize(double width, double height) => game.Resize(width, height);
 
     [JSInvokable]
-    public async Task OnFrame(double timestampMs)
+    public async Task OnFrame(double timestampMs, bool moved, double x, double y)
     {
         if (faulted || drawer is null)
         {
@@ -49,6 +59,13 @@
 
         try
         {
+            // Pointer motion arrives with the frame rather than as its own event, already
+            // coalesced to the newest position — see js/game.js.
+            if (moved)
+            {
+                game.OnPointerMove(x, y);
+            }
+
             game.Update(TimeSpan.FromMilliseconds(timestampMs));
 
             // The board is static almost all the time and the canvas keeps the last
@@ -74,8 +91,6 @@
     // just a press that never travelled — the game turns that back into a click itself.
     private void HandlePointerDown(PointerEventArgs e) => game.OnPointerDown(e.OffsetX, e.OffsetY);
 
-    private void HandlePointerMove(PointerEventArgs e) => game.OnPointerMove(e.OffsetX, e.OffsetY);
-
     private void HandlePointerUp(PointerEventArgs e) => game.OnPointerUp(e.OffsetX, e.OffsetY);
 
     private void HandlePointerCancel(PointerEventArgs e) => game.OnPointerCancel();
@@ -85,6 +100,14 @@
     private void HandleDoubleClick(MouseEventArgs e) => game.OnDoubleClick(e.OffsetX, e.OffsetY);
 
     private void HandleKeyDown(KeyboardEventArgs e) => game.OnKeyDown(e.Code);
+
+    // The markup is one static div and a canvas, and the picture inside it is painted
+    // imperatively from the frame loop. Blazor re-renders a component after every event
+    // handler it owns, so without this each press, release, and keystroke walks the render
+    // tree to produce the same markup it produced last time.
+    protected override bool ShouldRender() => !rendered;
+
+    private bool rendered;
 
     public void Dispose() => selfRef?.Dispose();
 }

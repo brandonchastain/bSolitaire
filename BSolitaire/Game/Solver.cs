@@ -1,3 +1,5 @@
+﻿using System.Diagnostics;
+
 namespace BSolitaire.Game;
 
 /// <summary>What a search found out about a position.</summary>
@@ -69,6 +71,15 @@ public sealed class Solver
     private const int PileCap = 24;
 
     private readonly Stack<Frame> stack = new();
+
+    /// <summary>
+    /// Expanded frames waiting to be used again. A frame owns the list its children live in,
+    /// and with positions stored by value that list is the only sizeable allocation left in
+    /// the search. Frames are finished in strict last-in-first-out order and a child is copied
+    /// out of the list before anything is pushed on top of it, so a popped frame's list is
+    /// provably unreachable and can go straight back into service.
+    /// </summary>
+    private readonly Stack<Frame> spare = new();
     private readonly Seen seen;
     private readonly SolverBudget budget;
     private readonly bool autoplay;
@@ -93,7 +104,7 @@ public sealed class Solver
         }
 
         seen.Add(root.Hash());
-        stack.Push(new Frame(Successors(root, autoplay)));
+        Expand(root);
     }
 
     public SolveResult Result { get; private set; } = SolveResult.Searching;
@@ -106,21 +117,49 @@ public sealed class Solver
 
     public bool Done => Result != SolveResult.Searching;
 
+    /// <summary>How often the clock is read, in positions. Reading it per position is
+    /// itself measurable at these speeds; a few hundred is far finer than any deadline
+    /// worth setting and costs nothing.</summary>
+    private const int ClockInterval = 256;
+
     /// <summary>
     /// Examines up to <paramref name="slice"/> more positions. Returns true once the search
     /// has an answer. Sized by the caller so a slice fits comfortably inside a frame.
     /// </summary>
-    public bool Step(int slice)
+    public bool Step(int slice) => Step(slice, Timeout.InfiniteTimeSpan);
+
+    /// <summary>
+    /// Examines more positions until <paramref name="slice"/> of them have been looked at or
+    /// <paramref name="limit"/> has elapsed, whichever comes first. Returns true once the
+    /// search has an answer.
+    ///
+    /// The deadline is the one that matters to a player. A position count is a proxy for time
+    /// that holds only as long as positions cost the same everywhere, and they do not: the
+    /// same slice that disappears into a frame on a desktop is several frames of a visible
+    /// freeze in a browser on a phone. Bounding the wall clock directly makes the search cost
+    /// the same fraction of a frame on every machine, and slow hardware simply takes more
+    /// frames to reach the same answer.
+    /// </summary>
+    public bool Step(int slice, TimeSpan limit)
     {
         if (Done)
         {
             return true; // an answer already, including one the constructor reached
         }
 
+        long startedAt = Stopwatch.GetTimestamp();
         int examined = 0;
 
         while (examined < slice)
         {
+            if (examined % ClockInterval == 0 &&
+                limit != Timeout.InfiniteTimeSpan &&
+                examined > 0 &&
+                Stopwatch.GetElapsedTime(startedAt) >= limit)
+            {
+                return false; // out of time, not out of tree: resumes on the next frame
+            }
+
             if (stack.Count == 0)
             {
                 // Every position reachable from the root has been expanded and none of them
@@ -132,7 +171,7 @@ public sealed class Solver
             var frame = stack.Peek();
             if (frame.Next >= frame.Children.Count)
             {
-                stack.Pop();
+                spare.Push(stack.Pop());
                 continue;
             }
 
@@ -157,10 +196,28 @@ public sealed class Solver
                 continue;
             }
 
-            stack.Push(new Frame(Successors(child, autoplay)));
+            Expand(child);
         }
 
         return false;
+    }
+
+    /// <summary>Pushes the position's children onto the search stack, reusing a spent frame.</summary>
+    private void Expand(in Position position)
+    {
+        Frame frame;
+        if (spare.Count > 0)
+        {
+            frame = spare.Pop();
+            frame.Reset();
+        }
+        else
+        {
+            frame = new Frame();
+        }
+
+        Successors(position, autoplay, frame.Children);
+        stack.Push(frame);
     }
 
     /// <summary>
@@ -168,14 +225,13 @@ public sealed class Solver
     /// again the move is forced — one successor instead of a whole fan of them — which is
     /// what keeps the tree small enough to finish.
     /// </summary>
-    private static List<Position> Successors(Position p, bool autoplay)
+    private static void Successors(in Position p, bool autoplay, List<Position> children)
     {
         if (autoplay && TryAutoplay(p, out var forced))
         {
-            return new List<Position> { forced };
+            children.Add(forced);
+            return;
         }
-
-        var children = new List<Position>();
 
         // Tableau and deck to foundations first: they are the moves that finish games, so
         // finding them early ends winnable searches sooner.
@@ -265,8 +321,6 @@ public sealed class Solver
                 }
             }
         }
-
-        return children;
     }
 
     /// <summary>
@@ -275,7 +329,7 @@ public sealed class Solver
     /// opposite colour is still looking for a base to sit on — and the other foundation of its
     /// own colour has reached r-2. Aces and twos are always safe.
     /// </summary>
-    private static bool TryAutoplay(Position p, out Position result)
+    private static bool TryAutoplay(in Position p, out Position result)
     {
         for (int i = 0; i < Piles; i++)
         {
@@ -295,11 +349,11 @@ public sealed class Solver
             }
         }
 
-        result = null!;
+        result = default;
         return false;
     }
 
-    private static bool IsSafe(Position p, byte card)
+    private static bool IsSafe(in Position p, byte card)
     {
         int rank = RankOf(card);
         if (rank <= 2)
@@ -346,14 +400,17 @@ public sealed class Solver
     /// <summary>One expanded position and how far its children have been walked.</summary>
     private sealed class Frame
     {
-        public Frame(List<Position> children)
-        {
-            Children = children;
-        }
-
-        public List<Position> Children { get; }
+        /// <summary>Sized past the widest branching a Klondike position reaches, so a
+        /// recycled frame never has to grow its list a second time.</summary>
+        public List<Position> Children { get; } = new(32);
 
         public int Next { get; set; }
+
+        public void Reset()
+        {
+            Children.Clear();
+            Next = 0;
+        }
     }
 
     /// <summary>
@@ -465,22 +522,36 @@ public sealed class Solver
     /// One array rather than a jagged one because a position is cloned for every child
     /// generated — millions of times — and eight allocations per clone is eight times the work
     /// for the allocator and the collector.
+    ///
+    /// A struct over an inline buffer rather than a class over a byte[] for the same reason
+    /// carried one step further: a class costs a heap object and an array per child, which
+    /// measured at ~300 bytes of garbage per position examined. Inline, a child is a register
+    /// copy into space the caller already owns and the collector never hears about it — which
+    /// matters far more on the browser's collector than on the desktop one.
     /// </summary>
-    private sealed class Position
+    private struct Position
     {
         private const int LengthAt = Piles * PileCap;
         private const int DownAt = LengthAt + Piles;
         private const int FoundationAt = DownAt + Piles;
         private const int Size = FoundationAt + Suits;
 
-        private byte[] data = null!;
+        /// <summary>The fixed-size body: seven pile slots, their lengths and face-down
+        /// counts, then the four foundations. Sized by the constants above.</summary>
+        [System.Runtime.CompilerServices.InlineArray(Size)]
+        private struct Body
+        {
+            private byte first;
+        }
+
+        private Body data;
 
         /// <summary>Cards still in the stock or waste.</summary>
         public ulong Deck;
 
         public static Position From(Board board)
         {
-            var p = new Position { data = new byte[Size] };
+            var p = new Position();
 
             for (int i = 0; i < Piles; i++)
             {
@@ -520,26 +591,27 @@ public sealed class Solver
 
         private static byte Encode(Card card) => (byte)((int)card.Suit * 13 + (int)card.Rank - 1);
 
-        public int Length(int pile) => data[LengthAt + pile];
+        public readonly int Length(int pile) => data[LengthAt + pile];
 
-        public int Down(int pile) => data[DownAt + pile];
+        public readonly int Down(int pile) => data[DownAt + pile];
 
-        public int Foundation(int suit) => data[FoundationAt + suit];
+        public readonly int Foundation(int suit) => data[FoundationAt + suit];
 
-        public byte CardAt(int pile, int index) => data[pile * PileCap + index];
+        public readonly byte CardAt(int pile, int index) => data[pile * PileCap + index];
 
-        public byte Top(int pile) => data[pile * PileCap + Length(pile) - 1];
+        public readonly byte Top(int pile) => data[pile * PileCap + Length(pile) - 1];
 
-        public bool IsWon =>
+        public readonly bool IsWon =>
             Foundation(0) == 13 && Foundation(1) == 13 && Foundation(2) == 13 && Foundation(3) == 13;
 
-        public bool InDeck(int card) => (Deck & (1UL << card)) != 0;
+        public readonly bool InDeck(int card) => (Deck & (1UL << card)) != 0;
 
-        public bool CanFound(byte card) => Foundation(SuitOf(card)) == RankOf(card) - 1;
+        public readonly bool CanFound(byte card) => Foundation(SuitOf(card)) == RankOf(card) - 1;
 
-        private Position Clone() => new() { data = (byte[])data.Clone(), Deck = Deck };
+        /// <summary>A whole position, by value. No heap traffic at all.</summary>
+        private readonly Position Clone() => this;
 
-        public Position MoveToFoundation(int pile)
+        public readonly Position MoveToFoundation(int pile)
         {
             var c = Clone();
             byte card = Top(pile);
@@ -549,7 +621,7 @@ public sealed class Solver
             return c;
         }
 
-        public Position DeckToFoundation(byte card)
+        public readonly Position DeckToFoundation(byte card)
         {
             var c = Clone();
             c.data[FoundationAt + SuitOf(card)] = (byte)RankOf(card);
@@ -557,7 +629,7 @@ public sealed class Solver
             return c;
         }
 
-        public Position DeckToPile(byte card, int pile)
+        public readonly Position DeckToPile(byte card, int pile)
         {
             var c = Clone();
             c.data[pile * PileCap + c.Length(pile)] = card;
@@ -566,7 +638,7 @@ public sealed class Solver
             return c;
         }
 
-        public Position FoundationToPile(int suit, int pile)
+        public readonly Position FoundationToPile(int suit, int pile)
         {
             var c = Clone();
             byte card = MakeCard(suit, c.Foundation(suit));
@@ -576,7 +648,7 @@ public sealed class Solver
             return c;
         }
 
-        public Position MoveRun(int from, int at, int to)
+        public readonly Position MoveRun(int from, int at, int to)
         {
             var c = Clone();
             int count = Length(from) - at;
@@ -616,7 +688,7 @@ public sealed class Solver
         /// so two positions that differ only by shuffling them are the same position, and
         /// treating them as such is a large part of what makes the search finish.
         /// </summary>
-        public ulong Hash()
+        public readonly ulong Hash()
         {
             Span<ulong> perPile = stackalloc ulong[Piles];
 
