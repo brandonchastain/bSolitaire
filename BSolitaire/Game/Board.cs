@@ -51,6 +51,27 @@ public class Board
     /// </summary>
     public int Version { get; private set; }
 
+    private readonly HashSet<Location> dirty = new();
+
+    /// <summary>
+    /// The piles whose contents have changed since the last <see cref="ClearDirty"/>. A move
+    /// touches two of them out of thirteen, and repainting a pile costs far more than working
+    /// out which ones to repaint — so the board says what it changed rather than leaving the
+    /// drawer to diff the whole position or give up and redraw everything.
+    /// </summary>
+    public IReadOnlyCollection<Location> DirtyPiles => dirty;
+
+    /// <summary>True when the whole position changed at once and naming piles is pointless.</summary>
+    public bool AllDirty { get; private set; } = true;
+
+    public void ClearDirty()
+    {
+        dirty.Clear();
+        AllDirty = false;
+    }
+
+    private void MarkDirty(Location loc) => dirty.Add(loc);
+
     /// <summary>
     /// Records that a search proved this position cannot be won. Only the search can know
     /// this, so it is told to the board rather than worked out by it. Ignored once a game has
@@ -81,6 +102,7 @@ public class Board
         }
 
         Dealer.Deal(FaceDownPile, TableauPiles);
+        AllDirty = true;
         State = GameState.Playing;
         Version++;
     }
@@ -142,6 +164,62 @@ public class Board
         return null;
     }
 
+    /// <summary>How many cards are already home. Used to tell a fast-forward that is making
+    /// progress from one that is only turning the stock over.</summary>
+    public int FoundationTotal
+    {
+        get
+        {
+            int total = 0;
+            foreach (var pile in FoundationPiles)
+            {
+                total += pile.Count;
+            }
+
+            return total;
+        }
+    }
+
+    /// <summary>
+    /// Whether the rest of the game is a formality. Once no tableau card is face down there
+    /// is nothing left to discover: every remaining card is either on a tableau top or in the
+    /// stock, which recycles without limit, so all of them can be reached. Playing it out is
+    /// then just clicking, and the game offers to do it instead.
+    ///
+    /// Greedily sending home whatever can go home always finishes from here. Take the lowest
+    /// rank not yet on a foundation: every card below it is already home, tableau piles run
+    /// downwards to their top card, so nothing is covering it, and its foundation is waiting
+    /// at exactly one less. So a card is always playable until none are left.
+    /// </summary>
+    public bool CanFastForward { get; private set; }
+
+    /// <summary>
+    /// Sends one more card home, or turns the stock over to reach one. Returns false when
+    /// there is nothing left to do. One card per call rather than the whole finish at once,
+    /// so the caller can spread it over frames and the player gets to watch it happen.
+    /// </summary>
+    public bool FastForwardStep()
+    {
+        for (int i = 0; i < NumTableauPiles; i++)
+        {
+            var pile = TableauPiles[i];
+            if (pile.Count > 0 && FoundationFor(pile[^1]) is { } home)
+            {
+                return MakeMove(new Move(new Location(PileKind.Tableau, i), home, 1));
+            }
+        }
+
+        if (FaceUpPile.Count > 0 && FoundationFor(FaceUpPile[^1]) is { } wasteHome)
+        {
+            return MakeMove(new Move(new Location(PileKind.FaceUp, 0), wasteHome, 1));
+        }
+
+        // Nothing is playable from where the stock happens to be sitting, so turn it over
+        // until the card that is playable comes up. This is the same cycling a player would
+        // do by hand, and it terminates for the same reason the finish does.
+        return DealFromStock() || RecycleWaste();
+    }
+
     public bool MakeMove(Move move)
     {
         var from = Pile(move.From);
@@ -159,6 +237,9 @@ public class Board
         {
             return false;
         }
+
+        MarkDirty(move.From);
+        MarkDirty(move.To);
 
         if (move.From.Kind == PileKind.FaceDown && move.To.Kind == PileKind.FaceUp)
         {
@@ -185,17 +266,35 @@ public class Board
     private void RefreshState()
     {
         Version++;
+        CanFastForward = false;
 
         foreach (var pile in FoundationPiles)
         {
             if (pile.Count < FoundationSize)
             {
                 State = Rules.IsStuck(this) ? GameState.Stuck : GameState.Playing;
+                CanFastForward = State == GameState.Playing && NothingLeftFaceDown();
                 return;
             }
         }
 
         State = GameState.Won;
+    }
+
+    private bool NothingLeftFaceDown()
+    {
+        foreach (var pile in TableauPiles)
+        {
+            foreach (var card in pile)
+            {
+                if (!card.IsFaceUp)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     /// <summary>Turns the top stock card face up onto the waste.</summary>
@@ -232,6 +331,8 @@ public class Board
         }
 
         FaceUpPile.Clear();
+        MarkDirty(new Location(PileKind.FaceDown, 0));
+        MarkDirty(new Location(PileKind.FaceUp, 0));
         RefreshState();
         return true;
     }
