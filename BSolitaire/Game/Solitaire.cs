@@ -16,7 +16,7 @@ public class Solitaire
     private int analysedVersion = -1;
 
     private bool fastForwarding;
-    private bool recordedThisGame;
+    private int recordedVersion = -1;
     private bool pressConsumed;
     private int framesUntilNextCard;
     private int stepsWithoutProgress;
@@ -174,18 +174,21 @@ public class Solitaire
     }
 
     /// <summary>
-    /// Counts a deal once it is over — won, stuck, or proved lost — and once only. The flag
-    /// rather than a state comparison, because a finished board keeps reporting the same
-    /// state on every frame until the player deals again.
+    /// Counts a deal once it is over — won, stuck, or proved lost — and once only. Keyed to
+    /// the board's version rather than to a flag this class clears: a finished board reports
+    /// the same state on every frame until it is dealt again, and dealing again does not
+    /// always come through <see cref="Reset"/> — the banner's button resets the board itself.
+    /// A deal is over at one version and the next deal starts at another, so the version is
+    /// the one thing that is true however the new game was started.
     /// </summary>
     private void RecordResult()
     {
-        if (recordedThisGame || Board.State == GameState.Playing)
+        if (Board.State == GameState.Playing || recordedVersion == Board.Version)
         {
             return;
         }
 
-        recordedThisGame = true;
+        recordedVersion = Board.Version;
         Score.Games++;
 
         if (Board.State == GameState.Won)
@@ -321,7 +324,6 @@ public class Solitaire
     public void Reset()
     {
         fastForwarding = false;
-        recordedThisGame = false;
         Guarded(Board.Reset);
     }
 
