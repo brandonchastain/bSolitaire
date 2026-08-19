@@ -1,4 +1,4 @@
-﻿namespace BSolitaire.Game;
+namespace BSolitaire.Game;
 
 /// <summary>
 /// One game session, and the only object the host component and the drawer talk to.
@@ -86,6 +86,17 @@ public class Solitaire
 
     /// <summary>Time since the game started. Set by <see cref="Update"/>.</summary>
     public TimeSpan Elapsed { get; private set; }
+
+    /// <summary>
+    /// Noises the board has asked for since the host last drained them. Nothing here makes a
+    /// sound; the host plays them and calls <see cref="ClearSounds"/>.
+    /// </summary>
+    public IReadOnlyList<Sound> Sounds => Board.Sounds;
+
+    public void ClearSounds() => Board.ClearSounds();
+
+    /// <summary>Whether the board is silent. Toggled with M, and saved with the score.</summary>
+    public bool Muted => Score.Muted;
 
     /// <summary>Called by the host once the current picture has been drawn.</summary>
     public void MarkClean()
@@ -265,6 +276,15 @@ public class Solitaire
             return;
         }
 
+        // The mute toggle sits in the gap column, where no pile ever is, so it only has to
+        // take the press ahead of the felt. Same swallowed release as the button above.
+        if (Layout.MuteButton.Contains(x, y))
+        {
+            pressConsumed = true;
+            ToggleMute();
+            return;
+        }
+
         pressConsumed = false;
         Guarded(() => input.Down(x, y));
     }
@@ -314,10 +334,23 @@ public class Solitaire
         {
             Reset();
         }
+        else if (code == "KeyM")
+        {
+            ToggleMute();
+        }
         else if (code is "Space" or "Enter")
         {
             StartFastForward();
         }
+    }
+
+    /// <summary>Silences the board, or lets it speak again. Saved with the score, so it is
+    /// still true the next time this browser opens the game.</summary>
+    public void ToggleMute()
+    {
+        Score.Muted = !Score.Muted;
+        NeedsRedraw = true;
+        ScoreChanged?.Invoke();
     }
 
     /// <summary>Abandons the current game and deals a new one.</summary>

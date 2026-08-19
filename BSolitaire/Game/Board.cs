@@ -70,6 +70,31 @@ public class Board
         AllDirty = false;
     }
 
+    private readonly List<Sound> sounds = new();
+
+    /// <summary>
+    /// Noises the position has asked for since the last <see cref="ClearSounds"/>. The board
+    /// names them and forgets them; playing one is the host's business.
+    /// </summary>
+    public IReadOnlyList<Sound> Sounds => sounds;
+
+    public void ClearSounds() => sounds.Clear();
+
+    /// <summary>
+    /// A ceiling on how many can pile up before anyone listens. Nothing a player can do
+    /// reaches it, but the queue is only drained by a running frame loop — if drawing stops,
+    /// this stops the list growing for the rest of the session.
+    /// </summary>
+    private const int MaxQueuedSounds = 32;
+
+    private void Play(Sound sound)
+    {
+        if (sounds.Count < MaxQueuedSounds)
+        {
+            sounds.Add(sound);
+        }
+    }
+
     private void MarkDirty(Location loc) => dirty.Add(loc);
 
     /// <summary>
@@ -102,6 +127,7 @@ public class Board
         }
 
         Dealer.Deal(FaceDownPile, TableauPiles);
+        Play(Sound.Deal);
         AllDirty = true;
         State = GameState.Playing;
         Version++;
@@ -235,6 +261,9 @@ public class Board
         }
         else
         {
+            // The one place a refusal is heard. Every illegal drop, tap, and shortcut ends
+            // up here, so the thunk is written once rather than at each of them.
+            Play(Sound.Invalid);
             return false;
         }
 
@@ -245,17 +274,33 @@ public class Board
         {
             var topCard = FaceUpPile[^1];
             topCard.Flip();
+            Play(Sound.Stock);
         }
-        else if (move.From.Kind == PileKind.Tableau && TableauPiles[move.From.PileIndex].Count > 0)
+        else
         {
-            var topCard = TableauPiles[move.From.PileIndex][^1];
-            if (!topCard.IsFaceUp)
+            Play(move.To.Kind == PileKind.Foundation ? Sound.Foundation : Sound.Place);
+
+            if (move.From.Kind == PileKind.Tableau && TableauPiles[move.From.PileIndex].Count > 0)
             {
-                topCard.Flip();
+                var topCard = TableauPiles[move.From.PileIndex][^1];
+                if (!topCard.IsFaceUp)
+                {
+                    topCard.Flip();
+
+                    // After the landing, not instead of it: uncovering a card is a second
+                    // thing happening, and the ear expects it a beat late.
+                    Play(Sound.Flip);
+                }
             }
         }
 
         RefreshState();
+
+        if (State == GameState.Won)
+        {
+            Play(Sound.Win);
+        }
+
         return true;
     }
 
@@ -331,6 +376,7 @@ public class Board
         }
 
         FaceUpPile.Clear();
+        Play(Sound.Recycle);
         MarkDirty(new Location(PileKind.FaceDown, 0));
         MarkDirty(new Location(PileKind.FaceUp, 0));
         RefreshState();

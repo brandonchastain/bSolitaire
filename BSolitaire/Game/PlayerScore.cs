@@ -17,6 +17,14 @@ public sealed class PlayerScore
 
     public int Wins { get; set; }
 
+    /// <summary>
+    /// Whether the board is silent. A preference rather than a score, but it belongs to the
+    /// same player and is saved by the same write — a second localStorage key for one bool
+    /// would be more machinery than the fact deserves. Shown by the speaker on the board,
+    /// not in the summary line.
+    /// </summary>
+    public bool Muted { get; set; }
+
     /// <summary>The line drawn on the board. A player with no nickname yet is still a player.</summary>
     [JsonIgnore]
     public string Summary =>
