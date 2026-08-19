@@ -1,4 +1,4 @@
-﻿namespace BSolitaire.Game;
+namespace BSolitaire.Game;
 
 
 public static class Rules
@@ -100,6 +100,20 @@ public static class Rules
             //throw new InvalidOperationException("Cannot move cards to the face down or face up piles.");
         }
 
+        // Nothing the player cannot see can be moved. The stock's deal is the exception that
+        // makes the rule: it is the move whose whole purpose is to turn a card over, and the
+        // flip happens after it lands. Every other pile gives up only what is face up.
+        if (move.From.Kind != PileKind.FaceDown)
+        {
+            for (int i = from.Count - move.Count; i < from.Count; i++)
+            {
+                if (!from[i].IsFaceUp)
+                {
+                    return false;
+                }
+            }
+        }
+
         if (move.To.Kind == PileKind.Foundation)
         {
             // Foundations take one card at a time. Without this a whole run drags onto a
@@ -137,6 +151,50 @@ public static class Rules
         // TODO: is this move of the `count` cards at move.From to move.To legal?
 
         return true;
+    }
+
+    /// <summary>
+    /// Whether the cards at and above <paramref name="index"/> can be lifted off a pile at
+    /// all, before any question of where they might land. Position and face-up-ness are as
+    /// much a rule of solitaire as rank and colour are — a buried card is not playable, the
+    /// waste offers only its top, and the stock is dealt from rather than dragged.
+    ///
+    /// The pointer needs this in three places: to decide what a press picks up, what a hover
+    /// highlights, and what a tap selects. Answering it here rather than at each of them is
+    /// what keeps the three from drifting — and the drop that follows still goes through
+    /// <see cref="IsLegal"/>, which is the only thing that can approve a move.
+    /// </summary>
+    public static bool CanLift(Board board, Location loc, int index)
+    {
+        var pile = board.Pile(loc);
+
+        if (index < 0 || index >= pile.Count)
+        {
+            return false;
+        }
+
+        switch (loc.Kind)
+        {
+            case PileKind.Tableau:
+                // A run comes up together, so every card in it has to be face up — not just
+                // the one under the pointer.
+                for (int i = index; i < pile.Count; i++)
+                {
+                    if (!pile[i].IsFaceUp)
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+
+            case PileKind.FaceUp:
+            case PileKind.Foundation:
+                return index == pile.Count - 1;
+
+            default:
+                return false;
+        }
     }
 
     /// <summary>
