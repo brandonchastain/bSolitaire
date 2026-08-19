@@ -1,4 +1,4 @@
-﻿namespace BSolitaire.Game;
+namespace BSolitaire.Game;
 
 /// <summary>
 /// A stack of cards held by the pointer. The cards are NOT removed from their pile while
@@ -215,11 +215,12 @@ public sealed class PointerInput
             return false;
         }
 
-        // Only a single, exposed, face-up card can be founded — never a buried one, and never
-        // a stack, since foundations take one card at a time.
+        // Only a single exposed card can be founded — never a buried one, and never a stack,
+        // since foundations take one card at a time. A card already home is not going
+        // anywhere either.
         var pile = board.Pile(loc);
-        if (loc.Kind == PileKind.FaceDown || loc.Kind == PileKind.Foundation ||
-            indexInPile != pile.Count - 1 || !pile[indexInPile].IsFaceUp)
+        if (loc.Kind == PileKind.Foundation || indexInPile != pile.Count - 1 ||
+            !Rules.CanLift(board, loc, indexInPile))
         {
             return false;
         }
@@ -242,56 +243,22 @@ public sealed class PointerInput
     }
 
     /// <summary>
-    /// Decides what a press picks up. Only face-up-ness and position in the pile are
-    /// considered here — whether the resulting move is legal is <see cref="Rules"/>'
-    /// business, asked on drop.
+    /// Decides what a press picks up. Whether the cards can leave the pile is
+    /// <see cref="Rules.CanLift"/>'s question; all this adds is handing back the cards it
+    /// approved. Whether the resulting move is legal is asked separately, on drop.
     /// </summary>
     private bool TryGrab(Location loc, int indexInPile, out IReadOnlyList<Card> cards)
     {
         cards = Array.Empty<Card>();
 
-        if (indexInPile < 0)
+        if (!Rules.CanLift(board, loc, indexInPile))
         {
-            return false; // empty slot
+            return false;
         }
 
-        switch (loc.Kind)
-        {
-            case PileKind.Tableau:
-                var tableau = board.TableauPiles[loc.PileIndex];
-                for (int i = indexInPile; i < tableau.Count; i++)
-                {
-                    if (!tableau[i].IsFaceUp)
-                    {
-                        return false;
-                    }
-                }
-
-                cards = tableau.GetRange(indexInPile, tableau.Count - indexInPile);
-                return true;
-
-            case PileKind.FaceUp:
-                if (indexInPile != board.FaceUpPile.Count - 1)
-                {
-                    return false; // only the top of the waste is playable
-                }
-
-                cards = new[] { board.FaceUpPile[indexInPile] };
-                return true;
-
-            case PileKind.Foundation:
-                var foundation = board.FoundationPiles[loc.PileIndex];
-                if (indexInPile != foundation.Count - 1)
-                {
-                    return false;
-                }
-
-                cards = new[] { foundation[indexInPile] };
-                return true;
-
-            default:
-                return false; // the stock is dealt from, never dragged
-        }
+        var pile = board.Pile(loc);
+        cards = pile.GetRange(indexInPile, pile.Count - indexInPile);
+        return true;
     }
 
     private void Drop(DragState held, double x, double y)
@@ -361,20 +328,21 @@ public sealed class PointerInput
         }
     }
 
+    /// <summary>
+    /// Marks what a tap picked out, so the next tap can try to move it. Selecting asks the
+    /// same question a press does — a tap and a drag pick up exactly the same cards, and
+    /// letting them disagree is how a face-down run became selectable and, on the tap that
+    /// followed, movable.
+    /// </summary>
     private void Select(Location loc, int indexInPile)
     {
-        if (loc.Kind == PileKind.FaceUp && indexInPile == board.FaceUpPile.Count - 1)
+        if (!Rules.CanLift(board, loc, indexInPile))
         {
-            selected = loc;
-            selectedCount = 1;
             return;
         }
 
-        if (loc.Kind == PileKind.Tableau && indexInPile >= 0)
-        {
-            selected = loc;
-            selectedCount = board.TableauPiles[loc.PileIndex].Count - indexInPile;
-        }
+        selected = loc;
+        selectedCount = board.Pile(loc).Count - indexInPile;
     }
 
     private void ClearSelection()
