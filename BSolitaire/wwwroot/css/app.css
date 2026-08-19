@@ -23,3 +23,44 @@ html, body {
 #board canvas {
     display: block;
 }
+
+/* The nickname overlay. The game is a canvas, so this is the only real markup on the
+   page — styled to match the felt-and-panel look the board draws for itself. */
+#nickname {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 10;
+}
+
+#nickname form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 16px;
+    border-radius: 8px;
+    border: 1px solid #e8f0e8;
+    background: #12351f;
+    color: #e8f0e8;
+    font: 16px sans-serif;
+}
+
+#nickname input {
+    font: 16px sans-serif;
+    padding: 6px 8px;
+    border-radius: 4px;
+    border: 1px solid #c9c3b8;
+}
+
+#nickname button {
+    font: bold 16px sans-serif;
+    padding: 6px 14px;
+    border-radius: 4px;
+    border: 1px solid #e8f0e8;
+    background: #0b6b3a;
+    color: #ffffff;
+    cursor: pointer;
+}
