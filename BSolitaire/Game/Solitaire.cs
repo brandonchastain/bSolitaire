@@ -16,6 +16,7 @@ public class Solitaire
     private int analysedVersion = -1;
 
     private bool fastForwarding;
+    private bool recordedThisGame;
     private bool pressConsumed;
     private int framesUntilNextCard;
     private int stepsWithoutProgress;
@@ -29,6 +30,21 @@ public class Solitaire
     }
 
     public Board Board { get; }
+
+    /// <summary>The local player's running record. The host loads it before the first frame
+    /// and saves it whenever <see cref="ScoreChanged"/> fires — the game itself only counts.</summary>
+    public PlayerScore Score { get; } = new();
+
+    /// <summary>Raised when <see cref="Score"/> has changed and is worth persisting.</summary>
+    public event Action? ScoreChanged;
+
+    /// <summary>Renames the player and reports the change so it gets saved.</summary>
+    public void SetNickname(string nickname)
+    {
+        Score.Nickname = nickname.Trim();
+        NeedsRedraw = true;
+        ScoreChanged?.Invoke();
+    }
 
     public BoardLayout Layout { get; }
 
@@ -129,6 +145,7 @@ public class Solitaire
     {
         Elapsed = elapsed;
         AdvanceFastForward();
+        RecordResult();
 
         // A move invalidates whatever the search was working on; start again on the new
         // position. Restarting rather than repairing is the honest thing: a move can turn a
@@ -154,6 +171,30 @@ public class Solitaire
             Board.MarkUnwinnable();
             NeedsRedraw = true;
         }
+    }
+
+    /// <summary>
+    /// Counts a deal once it is over — won, stuck, or proved lost — and once only. The flag
+    /// rather than a state comparison, because a finished board keeps reporting the same
+    /// state on every frame until the player deals again.
+    /// </summary>
+    private void RecordResult()
+    {
+        if (recordedThisGame || Board.State == GameState.Playing)
+        {
+            return;
+        }
+
+        recordedThisGame = true;
+        Score.Games++;
+
+        if (Board.State == GameState.Won)
+        {
+            Score.Wins++;
+        }
+
+        NeedsRedraw = true;
+        ScoreChanged?.Invoke();
     }
 
     /// <summary>
@@ -280,6 +321,7 @@ public class Solitaire
     public void Reset()
     {
         fastForwarding = false;
+        recordedThisGame = false;
         Guarded(Board.Reset);
     }
 

@@ -246,6 +246,8 @@ public class CanvasDrawer : IGameDrawer
             await ctx.FillTextAsync($"Error: {game.Error}", 24, 80);
         }
 
+        await DrawScore(layout, game.Score);
+
         if (game.ShowStats)
         {
             await DrawStats(layout, game.Analysis, game.AnalysisNodes);
@@ -424,6 +426,19 @@ public class CanvasDrawer : IGameDrawer
             "New Game",
             button.X + button.W / 2,
             button.Y + button.H / 2);
+    }
+
+    /// <summary>
+    /// The local player's record, bottom-right, where the board never reaches: the tableau is
+    /// centred and the fast-forward offer sits in the middle. Drawn on the live pass rather
+    /// than the cached board, so it survives the banner dimming the felt behind it.
+    /// </summary>
+    private async ValueTask DrawScore(BoardLayout layout, PlayerScore score)
+    {
+        await Fill("#cfe0d2");
+        await Font("bold 14px monospace");
+        await Align("right");
+        await ctx.FillTextAsync(score.Summary, layout.Width - 8, layout.Height - 14);
     }
 
     /// <summary>

@@ -44,7 +44,15 @@ window.bSolitaire = (() => {
             .then(() => requestAnimationFrame(frame));
     }
 
+    // The score record lives in this browser and nowhere else, so localStorage is the whole
+    // of the persistence layer. Shape is decided by the C# record it round-trips through.
+    const SCORE_KEY = 'bSolitaire.score';
+
     return {
+        loadScore: () => localStorage.getItem(SCORE_KEY),
+
+        saveScore: (json) => localStorage.setItem(SCORE_KEY, json),
+
         start: (dotNetRef) => {
             dotNet = dotNetRef;
             const board = document.getElementById('board');

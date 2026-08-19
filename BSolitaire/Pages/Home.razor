@@ -1,4 +1,5 @@
 @page "/"
+@using System.Text.Json
 @implements IDisposable
 @inject IJSRuntime JS
 @inject ILogger<Home> Logger
@@ -12,6 +13,19 @@
      @onkeydown="HandleKeyDown" @onkeydown:preventDefault="true">
     <BECanvas @ref="canvasRef" />
 </div>
+
+@if (askingNickname)
+{
+    @* A plain DOM overlay rather than window.prompt: prompt() is blocked outright in some
+       browsers, and the board is a canvas, so a text field has to be real markup anyway. *@
+    <div id="nickname">
+        <form @onsubmit="SaveNickname" @onsubmit:preventDefault="true">
+            <label for="nickname-input">Nickname</label>
+            <input id="nickname-input" @bind="nicknameDraft" @bind:event="oninput" maxlength="16" autofocus />
+            <button type="submit">OK</button>
+        </form>
+    </div>
+}
 
 @* The board is redrawn into this off-screen canvas only when the position changes, and
    blitted from it every frame. It is never shown. *@
@@ -44,6 +58,10 @@
             cacheRef.CanvasReference);
         selfRef = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("bSolitaire.start", selfRef);
+
+        // After the loop is running, not before: a score that fails to load costs the
+        // player their record, but it must never cost them the game.
+        await LoadScore();
     }
 
     [JSInvokable]
@@ -68,6 +86,14 @@
 
             game.Update(TimeSpan.FromMilliseconds(timestampMs));
 
+            // A name is worth asking for once there is something to put it against, so the
+            // first win is what asks — not the first deal, which interrupts a player who has
+            // not yet decided they care.
+            if (game.State == GameState.Won && !nicknameAsked && string.IsNullOrWhiteSpace(game.Score.Nickname))
+            {
+                AskNickname();
+            }
+
             // The board is static almost all the time and the canvas keeps the last
             // frame, so redrawing an unchanged board is pure waste.
             if (!game.NeedsRedraw)
@@ -87,6 +113,63 @@
         }
     }
 
+    /// <summary>
+    /// Pulls the local record out of the browser and asks for a nickname the first time
+    /// anyone plays here. Saving is driven from the game's own event, so a win is recorded
+    /// without the host having to know when a game ends.
+    /// </summary>
+    private async Task LoadScore()
+    {
+        var stored = await JS.InvokeAsync<string?>("bSolitaire.loadScore");
+
+        if (stored is not null)
+        {
+            try
+            {
+                var saved = JsonSerializer.Deserialize<PlayerScore>(stored);
+
+                if (saved is not null)
+                {
+                    game.Score.Nickname = saved.Nickname;
+                    game.Score.Games = saved.Games;
+                    game.Score.Wins = saved.Wins;
+                }
+            }
+            catch (JsonException ex)
+            {
+                // A record we can't read is a record we start over, not a broken game.
+                Logger.LogWarning(ex, "Discarding unreadable score record");
+            }
+        }
+
+        game.ScoreChanged += SaveScore;
+    }
+
+    private void AskNickname()
+    {
+        nicknameAsked = true;
+        nicknameDraft = game.Score.Nickname;
+        askingNickname = true;
+        overlayDirty = true;
+        StateHasChanged();
+    }
+
+    private void SaveNickname()
+    {
+        if (!string.IsNullOrWhiteSpace(nicknameDraft))
+        {
+            game.SetNickname(nicknameDraft);
+        }
+
+        askingNickname = false;
+        overlayDirty = true;
+    }
+
+    // Fire-and-forget: the game raises this from inside a frame, and the write is a
+    // localStorage set that nothing later in the frame depends on.
+    private void SaveScore() =>
+        _ = JS.InvokeVoidAsync("bSolitaire.saveScore", JsonSerializer.Serialize(game.Score));
+
     // Pointer events rather than click: they cover mouse, touch, and pen, and a tap is
     // just a press that never travelled — the game turns that back into a click itself.
     private void HandlePointerDown(PointerEventArgs e) => game.OnPointerDown(e.OffsetX, e.OffsetY);
@@ -99,15 +182,49 @@
     // double-click interval, and mobile browsers synthesise it from a double tap.
     private void HandleDoubleClick(MouseEventArgs e) => game.OnDoubleClick(e.OffsetX, e.OffsetY);
 
-    private void HandleKeyDown(KeyboardEventArgs e) => game.OnKeyDown(e.Code);
+    // N is the host's own key rather than the game's: asking for a nickname means a JS
+    // prompt, and Solitaire deliberately knows nothing about the browser.
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Code == "KeyN")
+        {
+            AskNickname();
+            return;
+        }
+
+        game.OnKeyDown(e.Code);
+    }
 
     // The markup is one static div and a canvas, and the picture inside it is painted
     // imperatively from the frame loop. Blazor re-renders a component after every event
     // handler it owns, so without this each press, release, and keystroke walks the render
     // tree to produce the same markup it produced last time.
-    protected override bool ShouldRender() => !rendered;
+    // ...except the nickname overlay, which is the one piece of real markup the page has.
+    // Clearing the flag here rather than after the render keeps the exception to the rule
+    // to a single line, and the next event finds it false again.
+    protected override bool ShouldRender()
+    {
+        if (rendered && !overlayDirty)
+        {
+            return false;
+        }
+
+        overlayDirty = false;
+        return true;
+    }
 
     private bool rendered;
+    private bool askingNickname;
 
-    public void Dispose() => selfRef?.Dispose();
+    // Asked at most once a session, so dismissing the field with an empty name doesn't
+    // put it straight back up on the next frame.
+    private bool nicknameAsked;
+    private bool overlayDirty;
+    private string nicknameDraft = "";
+
+    public void Dispose()
+    {
+        game.ScoreChanged -= SaveScore;
+        selfRef?.Dispose();
+    }
 }
