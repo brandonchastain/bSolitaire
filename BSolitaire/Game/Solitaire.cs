@@ -1,30 +1,29 @@
 namespace BSolitaire.Game;
 
 /// <summary>
-/// One game session, and the only object the host component and the drawer talk to.
-/// It owns the pieces and wires them together — the rules live in <see cref="Rules"/>,
-/// moves in <see cref="Board"/>, geometry in <see cref="BoardLayout"/>, gestures in
-/// <see cref="PointerInput"/>, the search's frame budget in <see cref="Analyzer"/>, the
-/// play-it-out pacing in <see cref="FastForward"/>, and the record in
-/// <see cref="ScoreKeeper"/>. What it adds is what the host needs and none of them should
-/// know: whether the picture needs redrawing, and whether anything blew up.
+/// One game session: the pieces, and the frame they share. The rules live in
+/// <see cref="Rules"/>, moves in <see cref="Board"/>, geometry in <see cref="BoardLayout"/>,
+/// input in <see cref="Controls"/>, the search's frame budget in <see cref="Analyzer"/>, the
+/// play-it-out pacing in <see cref="FastForward"/>, and the record in <see cref="ScoreKeeper"/>.
+///
+/// What is left here is the part none of them can hold: giving each one its slice of a frame,
+/// carrying out the handful of commands the player can ask for, and telling the host the two
+/// things it needs to know — whether the picture is out of date, and whether anything blew up.
 /// It knows nothing about Blazor, canvas, or JS, so it stays unit-testable.
 /// </summary>
 public class Solitaire
 {
-    private readonly PointerInput input;
+    private readonly Controls controls;
     private readonly Analyzer analyzer;
     private readonly FastForward fastForward;
     private readonly ScoreKeeper scores;
-
-    private bool pressConsumed;
 
     public Solitaire()
     {
         Board = new Board();
         // Placeholder size; the host calls Resize with the real viewport on first render.
         Layout = new BoardLayout(800, 600);
-        input = new PointerInput(Board, Layout);
+        controls = new Controls(Board, Layout);
         analyzer = new Analyzer(Board);
         fastForward = new FastForward(Board);
         scores = new ScoreKeeper(Board);
@@ -45,23 +44,16 @@ public class Solitaire
         remove => scores.Changed -= value;
     }
 
-    /// <summary>Renames the player and reports the change so it gets saved.</summary>
-    public void SetNickname(string nickname)
-    {
-        scores.SetNickname(nickname);
-        NeedsRedraw = true;
-    }
-
     /// <summary>The stack currently held by the pointer, or null.</summary>
-    public DragState? Drag => input.Drag;
+    public DragState? Drag => controls.Drag;
 
     /// <summary>The pile the pointer is resting on and could pick up from, or null. Hidden
     /// while the board is playing itself out — nothing there is grabbable.</summary>
-    public Location? HoverPile => fastForward.IsRunning ? null : input.HoverPile;
+    public Location? HoverPile => fastForward.IsRunning ? null : controls.HoverPile;
 
     /// <summary>Index of the lowest card the pointer would pick up from
     /// <see cref="HoverPile"/>.</summary>
-    public int HoverIndex => input.HoverIndex;
+    public int HoverIndex => controls.HoverIndex;
 
     /// <summary>Whether the game is still going, and if not, how it ended.</summary>
     public GameState State => Board.State;
@@ -81,9 +73,6 @@ public class Solitaire
     /// already doing so — the offer and the act are never both on screen.
     /// </summary>
     public bool CanFastForward => Board.CanFastForward && !fastForward.IsRunning && Drag == null;
-
-    /// <summary>Whether the rest of the game is currently playing itself out.</summary>
-    public bool IsFastForwarding => fastForward.IsRunning;
 
     /// <summary>Whether the draw-time overlay is shown. Toggled with F.</summary>
     public bool ShowStats { get; private set; }
@@ -136,7 +125,7 @@ public class Solitaire
             NeedsRedraw = true;
         }
 
-        if (analyzer.Update(paused: input.Drag != null || fastForward.IsRunning))
+        if (analyzer.Update(paused: Drag != null || fastForward.IsRunning))
         {
             NeedsRedraw = true;
         }
@@ -169,64 +158,15 @@ public class Solitaire
         }
     }
 
-    /// <summary>Starts playing the rest of the game out. Ignored unless the board is offering
-    /// to — a decided game is the only kind there is nothing to decide about.</summary>
-    public void StartFastForward()
-    {
-        if (!CanFastForward)
-        {
-            return;
-        }
+    public void OnPointerDown(double x, double y) =>
+        Guarded(() => Do(controls.Down(x, y, CanFastForward)));
 
-        fastForward.Start();
-        NeedsRedraw = true;
-    }
+    public void OnPointerUp(double x, double y) => Guarded(() => controls.Up(x, y));
 
-    public void OnPointerDown(double x, double y)
-    {
-        // The button sits over the felt, so it has to take the press before the piles get a
-        // look at it. The release that follows has to be swallowed too: PointerInput never
-        // saw the press, and left to itself it would treat the release as a tap at wherever
-        // the last real press happened to be.
-        if (CanFastForward && Layout.FastForwardButton.Contains(x, y))
-        {
-            pressConsumed = true;
-            StartFastForward();
-            return;
-        }
-
-        // The mute toggle sits in the gap column, where no pile ever is, so it only has to
-        // take the press ahead of the felt. Same swallowed release as the button above.
-        if (Layout.MuteButton.Contains(x, y))
-        {
-            pressConsumed = true;
-            ToggleMute();
-            return;
-        }
-
-        pressConsumed = false;
-        Guarded(() => input.Down(x, y));
-    }
-
-    public void OnPointerUp(double x, double y)
-    {
-        if (pressConsumed)
-        {
-            pressConsumed = false;
-            return;
-        }
-
-        Guarded(() => input.Up(x, y));
-    }
-
-    public void OnPointerCancel()
-    {
-        pressConsumed = false;
-        Guarded(input.Cancel);
-    }
+    public void OnPointerCancel() => Guarded(controls.Cancel);
 
     /// <summary>Double-click at (x, y): a shortcut for sending a card to its foundation.</summary>
-    public void OnDoubleClick(double x, double y) => Guarded(() => input.DoubleClick(x, y));
+    public void OnDoubleClick(double x, double y) => Guarded(() => controls.DoubleClick(x, y));
 
     /// <summary>
     /// The one hot input path — it fires continuously — so it sidesteps <see cref="Guarded"/>
@@ -235,41 +175,49 @@ public class Solitaire
     /// </summary>
     public void OnPointerMove(double x, double y)
     {
-        if (input.Move(x, y))
+        if (controls.Move(x, y))
         {
             NeedsRedraw = true;
         }
     }
 
     /// <summary>A key press, using KeyboardEvent.code values ("KeyR", "Space", "ArrowLeft"...).</summary>
-    public void OnKeyDown(string code)
+    public void OnKeyDown(string code) => Guarded(() => Do(controls.Key(code)));
+
+    /// <summary>
+    /// Carries out one thing the player asked for. Every command arrives here whether it came
+    /// from a key or from a button on the felt, so the rule about when each is allowed is
+    /// written once and the two routes cannot drift apart.
+    /// </summary>
+    private void Do(PlayerCommand command)
     {
-        if (code == "KeyF")
+        switch (command)
         {
-            ShowStats = !ShowStats;
-            NeedsRedraw = true;
-        }
-        else if (code == "KeyR")
-        {
-            Reset();
-        }
-        else if (code == "KeyM")
-        {
-            ToggleMute();
-        }
-        else if (code is "Space" or "Enter")
-        {
-            StartFastForward();
+            case PlayerCommand.FastForward:
+                // A decided game is the only kind there is nothing left to decide about.
+                if (CanFastForward)
+                {
+                    fastForward.Start();
+                }
+
+                break;
+
+            case PlayerCommand.ToggleMute:
+                scores.ToggleMute();
+                break;
+
+            case PlayerCommand.ToggleStats:
+                ShowStats = !ShowStats;
+                break;
+
+            case PlayerCommand.NewGame:
+                Reset();
+                break;
         }
     }
 
-    /// <summary>Silences the board, or lets it speak again. Saved with the score, so it is
-    /// still true the next time this browser opens the game.</summary>
-    public void ToggleMute()
-    {
-        scores.ToggleMute();
-        NeedsRedraw = true;
-    }
+    /// <summary>Renames the player and reports the change so it gets saved.</summary>
+    public void SetNickname(string nickname) => Guarded(() => scores.SetNickname(nickname));
 
     /// <summary>Abandons the current game and deals a new one.</summary>
     public void Reset()
@@ -282,20 +230,16 @@ public class Solitaire
     /// Every input entry point funnels through here, so the error boundary and the redraw
     /// flag are each written in exactly one place instead of once per handler.
     /// </summary>
-    private void Guarded(Action action) => Guarded(() => { action(); return true; });
-
-    private bool Guarded(Func<bool> action)
+    private void Guarded(Action action)
     {
         try
         {
-            bool result = action();
+            action();
             Error = null;
-            return result;
         }
         catch (Exception ex)
         {
             Error = ex.ToString();
-            return false;
         }
         finally
         {
