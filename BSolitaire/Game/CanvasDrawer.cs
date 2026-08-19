@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using Microsoft.AspNetCore.Components;
 using Blazor.Extensions.Canvas.Canvas2D;
 
@@ -247,6 +247,7 @@ public class CanvasDrawer : IGameDrawer
         }
 
         await DrawScore(layout, game.Score);
+        await DrawMute(layout, game.Muted);
 
         if (game.ShowStats)
         {
@@ -426,6 +427,61 @@ public class CanvasDrawer : IGameDrawer
             "New Game",
             button.X + button.W / 2,
             button.Y + button.H / 2);
+    }
+
+    /// <summary>
+    /// The mute toggle: a speaker in the bottom-right corner, above the score line.
+    /// Drawn on the live pass rather than into the cached board, because it is a control
+    /// rather than part of the position — and it has to survive the banner dimming the felt,
+    /// which is exactly when a player wants to turn the fanfare off.
+    /// </summary>
+    private async ValueTask DrawMute(BoardLayout layout, bool muted)
+    {
+        var button = layout.MuteButton;
+        double size = button.W;
+        double cy = button.Y + size / 2;
+
+        await RoundedPath(button, size * 0.22);
+        await Fill("#12351f");
+        await ctx.FillAsync();
+        await LineWidth(1);
+        await Stroke(muted ? "#6f8a78" : "#cfe0d2");
+        await ctx.StrokeAsync();
+
+        string ink = muted ? "#8fa697" : "#f4f8f4";
+
+        // The cone, drawn as one path: the flat back, then out to the mouth and around.
+        await ctx.BeginPathAsync();
+        await ctx.MoveToAsync(button.X + size * 0.24, cy - size * 0.10);
+        await ctx.LineToAsync(button.X + size * 0.36, cy - size * 0.10);
+        await ctx.LineToAsync(button.X + size * 0.52, cy - size * 0.26);
+        await ctx.LineToAsync(button.X + size * 0.52, cy + size * 0.26);
+        await ctx.LineToAsync(button.X + size * 0.36, cy + size * 0.10);
+        await ctx.LineToAsync(button.X + size * 0.24, cy + size * 0.10);
+        await ctx.ClosePathAsync();
+        await Fill(ink);
+        await ctx.FillAsync();
+
+        await LineWidth(Math.Max(1.5, size * 0.055));
+        await Stroke(ink);
+
+        if (muted)
+        {
+            // A slash rather than dropping the waves: an icon that only differs by what is
+            // missing is one a player has to have seen the other state of to read.
+            await ctx.BeginPathAsync();
+            await ctx.MoveToAsync(button.X + size * 0.62, cy - size * 0.16);
+            await ctx.LineToAsync(button.X + size * 0.82, cy + size * 0.16);
+            await ctx.StrokeAsync();
+            return;
+        }
+
+        foreach (double radius in new[] { size * 0.14, size * 0.24 })
+        {
+            await ctx.BeginPathAsync();
+            await ctx.ArcAsync(button.X + size * 0.52, cy, radius, -0.9, 0.9);
+            await ctx.StrokeAsync();
+        }
     }
 
     /// <summary>

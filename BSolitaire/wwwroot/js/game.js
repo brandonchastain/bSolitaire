@@ -59,6 +59,11 @@ window.bSolitaire = (() => {
             canvas = board.querySelector('canvas');
             cache = document.querySelector('#cache canvas');
 
+            // Audio can only be started from inside a user gesture, and Blazor's own
+            // pointerdown handler is not one — it arrives over interop, after the event.
+            // So the context is opened here, on the real event, once.
+            board.addEventListener('pointerdown', () => window.bSolitaireAudio.unlock(), { once: true });
+
             board.addEventListener('pointermove', (e) => {
                 moveX = e.offsetX;
                 moveY = e.offsetY;

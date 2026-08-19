@@ -1,4 +1,4 @@
-﻿namespace BSolitaire.Game;
+namespace BSolitaire.Game;
 
 public readonly record struct Rect(double X, double Y, double W, double H)
 {
@@ -60,6 +60,13 @@ public sealed class BoardLayout
     /// runs left over, so nothing it could cover is still there.</summary>
     public Rect FastForwardButton { get; private set; }
 
+    /// <summary>
+    /// The mute toggle, in the bottom-right corner just above the score line. Out of the way
+    /// of the deal: the tableau is centred and its columns are only as long as the cards in
+    /// them, so the bottom corner is the one part of the board that is reliably empty.
+    /// </summary>
+    public Rect MuteButton { get; private set; }
+
     /// <summary>Piles that can be dropped onto. The stock and waste are never drop targets.</summary>
     private static readonly PileKind[] DropTargetKinds = [PileKind.Tableau, PileKind.Foundation];
 
@@ -108,6 +115,15 @@ public sealed class BoardLayout
             Banner.Y + bannerH - buttonH - bannerH * 0.14,
             buttonW,
             buttonH);
+
+        // The score line runs along the bottom edge, so the button sits clear above it
+        // rather than on top of it.
+        double muteSize = CardWidth * 0.42;
+        MuteButton = new Rect(
+            width - muteSize - gutter,
+            height - muteSize - 26,
+            muteSize,
+            muteSize);
 
         double ffW = Math.Min(width - 2 * gutter, CardWidth * 2.8);
         double ffH = CardHeight * 0.42;

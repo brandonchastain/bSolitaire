@@ -1,4 +1,4 @@
-@page "/"
+﻿@page "/"
 @using System.Text.Json
 @implements IDisposable
 @inject IJSRuntime JS
@@ -94,6 +94,8 @@
                 AskNickname();
             }
 
+            PlaySounds();
+
             // The board is static almost all the time and the canvas keeps the last
             // frame, so redrawing an unchanged board is pure waste.
             if (!game.NeedsRedraw)
@@ -111,6 +113,36 @@
             faulted = true;
             Logger.LogError(ex, "Game loop faulted");
         }
+    }
+
+    /// <summary>
+    /// Hands the frame's noises to the browser and forgets them. One call per frame carrying
+    /// the whole list, in the same spirit as the coalesced pointer moves — a deal asks for a
+    /// riffle, not fourteen separate interop hops. Fire-and-forget: nothing later in the
+    /// frame depends on a sound having started, and waiting on it would put the audio clock
+    /// in front of the draw.
+    /// </summary>
+    private void PlaySounds()
+    {
+        if (mutedInJs != game.Muted)
+        {
+            mutedInJs = game.Muted;
+            _ = JS.InvokeVoidAsync("bSolitaireAudio.setMuted", mutedInJs);
+        }
+
+        if (game.Sounds.Count == 0)
+        {
+            return;
+        }
+
+        var sounds = new int[game.Sounds.Count];
+        for (int i = 0; i < sounds.Length; i++)
+        {
+            sounds[i] = (int)game.Sounds[i];
+        }
+
+        game.ClearSounds();
+        _ = JS.InvokeVoidAsync("bSolitaireAudio.play", sounds);
     }
 
     /// <summary>
@@ -133,6 +165,7 @@
                     game.Score.Nickname = saved.Nickname;
                     game.Score.Games = saved.Games;
                     game.Score.Wins = saved.Wins;
+                    game.Score.Muted = saved.Muted;
                 }
             }
             catch (JsonException ex)
@@ -220,6 +253,11 @@
     // put it straight back up on the next frame.
     private bool nicknameAsked;
     private bool overlayDirty;
+
+    // What JS was last told, so the setting is pushed on change rather than every frame.
+    // False to start, matching a fresh audio context; a muted record corrects it on the
+    // first frame after the score loads.
+    private bool mutedInJs;
     private string nicknameDraft = "";
 
     public void Dispose()
