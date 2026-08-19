@@ -3,23 +3,21 @@ namespace BSolitaire.Game;
 /// <summary>
 /// One game session, and the only object the host component and the drawer talk to.
 /// It owns the pieces and wires them together — the rules live in <see cref="Rules"/>,
-/// moves in <see cref="Board"/>, geometry in <see cref="BoardLayout"/>, and gestures in
-/// <see cref="PointerInput"/>. What it adds is what the host needs and none of them
-/// should know: whether the picture needs redrawing, and whether anything blew up.
+/// moves in <see cref="Board"/>, geometry in <see cref="BoardLayout"/>, gestures in
+/// <see cref="PointerInput"/>, the search's frame budget in <see cref="Analyzer"/>, the
+/// play-it-out pacing in <see cref="FastForward"/>, and the record in
+/// <see cref="ScoreKeeper"/>. What it adds is what the host needs and none of them should
+/// know: whether the picture needs redrawing, and whether anything blew up.
 /// It knows nothing about Blazor, canvas, or JS, so it stays unit-testable.
 /// </summary>
 public class Solitaire
 {
     private readonly PointerInput input;
+    private readonly Analyzer analyzer;
+    private readonly FastForward fastForward;
+    private readonly ScoreKeeper scores;
 
-    private Solver? solver;
-    private int analysedVersion = -1;
-
-    private bool fastForwarding;
-    private int recordedVersion = -1;
     private bool pressConsumed;
-    private int framesUntilNextCard;
-    private int stepsWithoutProgress;
 
     public Solitaire()
     {
@@ -27,33 +25,39 @@ public class Solitaire
         // Placeholder size; the host calls Resize with the real viewport on first render.
         Layout = new BoardLayout(800, 600);
         input = new PointerInput(Board, Layout);
+        analyzer = new Analyzer(Board);
+        fastForward = new FastForward(Board);
+        scores = new ScoreKeeper(Board);
     }
 
     public Board Board { get; }
 
+    public BoardLayout Layout { get; }
+
     /// <summary>The local player's running record. The host loads it before the first frame
-    /// and saves it whenever <see cref="ScoreChanged"/> fires — the game itself only counts.</summary>
-    public PlayerScore Score { get; } = new();
+    /// and saves it whenever <see cref="ScoreChanged"/> fires.</summary>
+    public PlayerScore Score => scores.Score;
 
     /// <summary>Raised when <see cref="Score"/> has changed and is worth persisting.</summary>
-    public event Action? ScoreChanged;
+    public event Action? ScoreChanged
+    {
+        add => scores.Changed += value;
+        remove => scores.Changed -= value;
+    }
 
     /// <summary>Renames the player and reports the change so it gets saved.</summary>
     public void SetNickname(string nickname)
     {
-        Score.Nickname = nickname.Trim();
+        scores.SetNickname(nickname);
         NeedsRedraw = true;
-        ScoreChanged?.Invoke();
     }
-
-    public BoardLayout Layout { get; }
 
     /// <summary>The stack currently held by the pointer, or null.</summary>
     public DragState? Drag => input.Drag;
 
     /// <summary>The pile the pointer is resting on and could pick up from, or null. Hidden
     /// while the board is playing itself out — nothing there is grabbable.</summary>
-    public Location? HoverPile => fastForwarding ? null : input.HoverPile;
+    public Location? HoverPile => fastForward.IsRunning ? null : input.HoverPile;
 
     /// <summary>Index of the lowest card the pointer would pick up from
     /// <see cref="HoverPile"/>.</summary>
@@ -76,10 +80,10 @@ public class Solitaire
     /// Whether the board is offering to play the rest of the game out. False while it is
     /// already doing so — the offer and the act are never both on screen.
     /// </summary>
-    public bool CanFastForward => Board.CanFastForward && !fastForwarding && Drag == null;
+    public bool CanFastForward => Board.CanFastForward && !fastForward.IsRunning && Drag == null;
 
     /// <summary>Whether the rest of the game is currently playing itself out.</summary>
-    public bool IsFastForwarding => fastForwarding;
+    public bool IsFastForwarding => fastForward.IsRunning;
 
     /// <summary>Whether the draw-time overlay is shown. Toggled with F.</summary>
     public bool ShowStats { get; private set; }
@@ -98,6 +102,15 @@ public class Solitaire
     /// <summary>Whether the board is silent. Toggled with M, and saved with the score.</summary>
     public bool Muted => Score.Muted;
 
+    /// <summary>How the search on the current position is going.</summary>
+    public SolveResult Analysis => analyzer.Result;
+
+    /// <summary>Positions the search has examined on the current board.</summary>
+    public int AnalysisNodes => analyzer.Nodes;
+
+    /// <summary>Distinct positions the search is holding on to.</summary>
+    public int AnalysisStates => analyzer.States;
+
     /// <summary>Called by the host once the current picture has been drawn.</summary>
     public void MarkClean()
     {
@@ -108,144 +121,52 @@ public class Solitaire
     public void Resize(double width, double height) => Guarded(() => Layout.Resize(width, height));
 
     /// <summary>
-    /// How long the search may run inside one frame. This is the number that decides whether
-    /// the board feels responsive: everything here shares a thread, so whatever the search
-    /// spends is added directly to the frame it runs in. Four milliseconds leaves the rest of
-    /// a sixty-hertz frame free, and unlike a position count it means the same thing on a
-    /// phone as on a desktop — slow hardware takes more frames rather than dropping them.
+    /// Called once per animation frame, before the drawer runs. This is where the fast-forward
+    /// takes its step and the search gets its slice: the board is idle between moves anyway —
+    /// the frame loop is already running and drawing nothing — so proving a deal dead costs
+    /// the player nothing they can feel.
     /// </summary>
-    private static readonly TimeSpan SearchBudget = TimeSpan.FromMilliseconds(4);
-
-    /// <summary>
-    /// A ceiling on positions per frame as well, so a machine fast enough to burn the whole
-    /// node budget inside four milliseconds still spreads the work out rather than doing it
-    /// all in one frame.
-    /// </summary>
-    private const int SearchSlice = 8000;
-
-    /// <summary>How the search on the current position is going. Null before it starts.</summary>
-    public SolveResult Analysis => solver?.Result ?? SolveResult.Searching;
-
-    /// <summary>Positions the search has examined on the current board.</summary>
-    public int AnalysisNodes => solver?.Nodes ?? 0;
-
-    /// <summary>Distinct positions the search is holding on to.</summary>
-    public int AnalysisStates => solver?.States ?? 0;
-
-    /// <summary>
-    /// Called once per animation frame, before the drawer runs. This is where the search gets
-    /// its time: a slice per frame, spread over however many frames it takes, so proving a
-    /// deal dead costs the player nothing they can feel. The board is idle between moves
-    /// anyway — the frame loop is already running and drawing nothing.
-    /// </summary>
-    /// <summary>
-    /// Frames between cards during a fast-forward. Instant would be a worse answer than fast:
-    /// the player asked to skip the clicking, not to skip seeing the game finish.
-    /// </summary>
-    private const int FramesPerCard = 3;
-
-    /// <summary>
-    /// A stop for a fast-forward that is turning the stock over without ever finding anything
-    /// to play. It cannot happen from a position that offers the button — but the button is
-    /// not the only thing that could ever call it, and a loop that never ends is a worse bug
-    /// than one card left unplayed.
-    /// </summary>
-    private const int StallLimit = 60;
-
     public void Update(TimeSpan elapsed)
     {
         Elapsed = elapsed;
         AdvanceFastForward();
-        RecordResult();
 
-        // A move invalidates whatever the search was working on; start again on the new
-        // position. Restarting rather than repairing is the honest thing: a move can turn a
-        // lost position into a won one and vice versa.
-        if (analysedVersion != Board.Version)
+        if (scores.Update())
         {
-            analysedVersion = Board.Version;
-            solver = Board.State == GameState.Playing ? new Solver(Board) : null;
+            NeedsRedraw = true;
         }
 
-        // A held stack is the one time the board animates, and the search is the one thing
-        // big enough to be felt inside a frame. Everything is on one thread here, so the
-        // slice and the draw are strictly in series: spending it mid-drag buys an answer
-        // nobody is waiting for at the cost of the only motion the player can see. The
-        // board stops moving the moment the stack is dropped, and the search resumes there.
-        if (solver == null || solver.Done || input.Drag != null || fastForwarding)
+        if (analyzer.Update(paused: input.Drag != null || fastForward.IsRunning))
         {
-            return;
-        }
-
-        if (solver.Step(SearchSlice, SearchBudget) && solver.Result == SolveResult.Unwinnable)
-        {
-            Board.MarkUnwinnable();
             NeedsRedraw = true;
         }
     }
 
     /// <summary>
-    /// Counts a deal once it is over — won, stuck, or proved lost — and once only. Keyed to
-    /// the board's version rather than to a flag this class clears: a finished board reports
-    /// the same state on every frame until it is dealt again, and dealing again does not
-    /// always come through <see cref="Reset"/> — the banner's button resets the board itself.
-    /// A deal is over at one version and the next deal starts at another, so the version is
-    /// the one thing that is true however the new game was started.
-    /// </summary>
-    private void RecordResult()
-    {
-        if (Board.State == GameState.Playing || recordedVersion == Board.Version)
-        {
-            return;
-        }
-
-        recordedVersion = Board.Version;
-        Score.Games++;
-
-        if (Board.State == GameState.Won)
-        {
-            Score.Wins++;
-        }
-
-        NeedsRedraw = true;
-        ScoreChanged?.Invoke();
-    }
-
-    /// <summary>
-    /// Plays one more card home, if a fast-forward is running. Paced across frames, and it
-    /// gives up the moment the board stops making progress or the game ends.
+    /// Lets a running fast-forward take its step. It is outside <see cref="Guarded"/> because
+    /// this runs every frame rather than on an input, and dirtying the picture unconditionally
+    /// would defeat the redraw check on the frames between cards.
     /// </summary>
     private void AdvanceFastForward()
     {
-        if (!fastForwarding)
+        if (!fastForward.IsRunning)
         {
             return;
         }
 
-        if (Board.State != GameState.Playing || stepsWithoutProgress > StallLimit)
+        try
         {
-            fastForwarding = false;
+            if (fastForward.Tick() != FastForwardTick.Idle)
+            {
+                NeedsRedraw = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            fastForward.Stop();
+            Error = ex.ToString();
             NeedsRedraw = true;
-            return;
         }
-
-        if (--framesUntilNextCard > 0)
-        {
-            return;
-        }
-
-        framesUntilNextCard = FramesPerCard;
-
-        int before = Board.FoundationTotal;
-        if (!Guarded(Board.FastForwardStep))
-        {
-            fastForwarding = false;
-            return;
-        }
-
-        // Turning the stock over is a step but not progress. Only cards reaching a
-        // foundation reset the stall count.
-        stepsWithoutProgress = Board.FoundationTotal > before ? 0 : stepsWithoutProgress + 1;
     }
 
     /// <summary>Starts playing the rest of the game out. Ignored unless the board is offering
@@ -257,9 +178,7 @@ public class Solitaire
             return;
         }
 
-        fastForwarding = true;
-        framesUntilNextCard = 1;
-        stepsWithoutProgress = 0;
+        fastForward.Start();
         NeedsRedraw = true;
     }
 
@@ -348,15 +267,14 @@ public class Solitaire
     /// still true the next time this browser opens the game.</summary>
     public void ToggleMute()
     {
-        Score.Muted = !Score.Muted;
+        scores.ToggleMute();
         NeedsRedraw = true;
-        ScoreChanged?.Invoke();
     }
 
     /// <summary>Abandons the current game and deals a new one.</summary>
     public void Reset()
     {
-        fastForwarding = false;
+        fastForward.Stop();
         Guarded(Board.Reset);
     }
 
