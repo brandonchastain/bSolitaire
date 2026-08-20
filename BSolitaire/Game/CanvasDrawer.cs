@@ -439,8 +439,7 @@ public class CanvasDrawer : IGameDrawer
             {
                 await DrawCard(
                     falling.Card,
-                    new Rect(falling.X, falling.Y, layout.CardWidth, layout.CardHeight),
-                    covered: false);
+                    new Rect(falling.X, falling.Y, layout.CardWidth, layout.CardHeight));
             }
 
             await ctx.EndBatchAsync();
@@ -467,7 +466,7 @@ public class CanvasDrawer : IGameDrawer
         // steering and so belongs on top of everything.
         foreach (var flight in game.InFlight)
         {
-            await DrawCard(flight.Card, flight.Rect, covered: false, faceUp: flight.FaceUp);
+            await DrawCard(flight.Card, flight.Rect, faceUp: flight.FaceUp);
         }
 
         if (drag != null)
@@ -631,10 +630,7 @@ public class CanvasDrawer : IGameDrawer
 
         for (int indexInPile = firstVisible; indexInPile < visibleCount; indexInPile++)
         {
-            await DrawCard(
-                pile[indexInPile],
-                layout.CardRect(location, indexInPile),
-                indexInPile < visibleCount - 1);
+            await DrawCard(pile[indexInPile], layout.CardRect(location, indexInPile));
         }
     }
 
@@ -824,31 +820,31 @@ public class CanvasDrawer : IGameDrawer
     }
 
     /// <summary>
-    /// Draws one card. A <paramref name="covered"/> card has another lying over it, so only
-    /// the strip along its top is ever seen: it gets its border and its rank and nothing
-    /// else. That is most of the cards on a dealt board, and skipping the rest is what makes
-    /// a drawn-out pip layout affordable at all.
+    /// Draws one card, whole, whether or not something is lying over it.
+    ///
+    /// Cards used to be drawn short when covered — border and rank and nothing else — which
+    /// was worth a great deal when a printed pip layout was a hundred canvas calls. The atlas
+    /// made that saving worth one call, and left the shortcut costing something instead: the
+    /// two ways of drawing a card no longer agreed. A cached board painted before the atlas
+    /// had warmed up held short cards, a pile repainted afterwards held whole ones, and the
+    /// backs in a column visibly changed the first time anything moved to or from it.
+    ///
+    /// So there is one picture of a card again, and it is the whole card. What shows of it is
+    /// decided by what is drawn on top, which is the way it works on a table.
     /// </summary>
     /// <param name="faceUp">
     /// Which side to show, when that is not the side the card is actually lying. Only an
     /// animation asks for this: a card turning over has to be drawn from its old face for
     /// the first half of the turn, and the board has already recorded the new one.
     /// </param>
-    private async ValueTask DrawCard(Card card, Rect rect, bool covered, bool? faceUp = null)
+    private async ValueTask DrawCard(Card card, Rect rect, bool? faceUp = null)
     {
         bool up = faceUp ?? card.IsFaceUp;
         int slot = up ? (int)card.Suit * 13 + (int)card.Rank - 1 : BackSlot;
 
         if (atlasReady[slot])
         {
-            // One call. The cell holds the whole face, so a covered card is drawn complete
-            // and then covered by the card above it rather than being drawn short.
-            //
-            // That is a visible change, and a deliberate one. Leaving most of a covered card
-            // out was a saving that assumed a tight fan, where the strip on show is the rank
-            // and nothing else. The fan is half a card now, so the strip reaches the suit
-            // under the index and the lattice on a back — and drawing those was the whole
-            // point of widening it. What used to be the cheap path is now the wrong picture.
+            // One call, and the cell holds the whole face.
             // The whole cell, padding and all, laid over the rectangle the card was asked
             // for and the same slack again around it.
             double across = rect.W / cardWidth;
@@ -868,14 +864,14 @@ public class CanvasDrawer : IGameDrawer
             return;
         }
 
-        await DrawCardDirect(card, rect, covered, up);
+        await DrawCardDirect(card, rect, up);
     }
 
     /// <summary>
     /// Draws one card the long way, mark by mark. Used for the faces the atlas does not hold
     /// yet, and to fill the atlas itself.
     /// </summary>
-    private async ValueTask DrawCardDirect(Card card, Rect rect, bool covered, bool up)
+    private async ValueTask DrawCardDirect(Card card, Rect rect, bool up)
     {
         await RoundedPath(rect, rect.W * CornerRadius);
         await LineWidth(1);
@@ -886,7 +882,7 @@ public class CanvasDrawer : IGameDrawer
 
         if (!up)
         {
-            await DrawBack(rect, covered);
+            await DrawBack(rect);
             return;
         }
 
@@ -901,11 +897,6 @@ public class CanvasDrawer : IGameDrawer
         double rankRow = compact ? CompactRankRow : RankRow;
         double nearAxis = rect.X + rect.W * indexAxis;
         await ctx.FillTextAsync(rank, nearAxis, rect.Y + rect.H * rankRow);
-
-        if (covered)
-        {
-            return;
-        }
 
         double cornerSize = rect.H * (compact ? CompactCornerSuitSize : CornerSuitSize);
         double farAxis = rect.X + rect.W * (1 - indexAxis);
@@ -1027,7 +1018,7 @@ public class CanvasDrawer : IGameDrawer
             layout.CardWidth,
             layout.CardHeight);
 
-        await DrawCardDirect(card, face, covered: false, up: slot != BackSlot);
+        await DrawCardDirect(card, face, up: slot != BackSlot);
     }
 
     /// <summary>
@@ -1062,7 +1053,7 @@ public class CanvasDrawer : IGameDrawer
         for (int i = 0; i < drag.Cards.Count; i++)
         {
             var rect = new Rect(0, i * layout.FanOffset, layout.CardWidth, layout.CardHeight);
-            await DrawCard(drag.Cards[i], rect, i < drag.Cards.Count - 1);
+            await DrawCard(drag.Cards[i], rect);
         }
 
         await ctx.EndBatchAsync();
@@ -1199,10 +1190,9 @@ public class CanvasDrawer : IGameDrawer
 
     /// <summary>
     /// The pattern on the back of a card: a coloured field inside a paper margin, a lattice
-    /// over it, and a medallion in the middle. A covered card gets only the field, which is
-    /// all of it that shows.
+    /// over it, and a medallion in the middle.
     /// </summary>
-    private async ValueTask DrawBack(Rect rect, bool covered)
+    private async ValueTask DrawBack(Rect rect)
     {
         double margin = rect.W * 0.07;
         var field = new Rect(
@@ -1215,11 +1205,6 @@ public class CanvasDrawer : IGameDrawer
         await RoundedPath(field, fieldRadius);
         await Fill(BackField);
         await ctx.FillAsync();
-
-        if (covered)
-        {
-            return;
-        }
 
         // Clipped to the field, so the lattice can be drawn as plain long diagonals and let
         // the clip do the work of stopping them at the border.
