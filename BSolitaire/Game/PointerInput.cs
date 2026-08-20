@@ -44,8 +44,14 @@ public sealed class PointerInput
     /// card it picked up, and a card you cannot see is one you cannot aim. Folded into the
     /// grab offset rather than added at draw time, so the drop lands where the card looks
     /// like it will — the alternative is a card that reads one column and drops in another.
+    ///
+    /// A quarter of a card rather than a half. The lift is paid for twice: once when the card
+    /// jumps out from under the finger that grabbed it, and again on every drop, because
+    /// placing the card on a pile means carrying the finger that far below it. Half a card
+    /// clears a fingertip with room to spare and made every move that much longer; a quarter
+    /// still shows the card and asks for less travel.
     /// </summary>
-    private const double TouchLift = 0.5;
+    private const double TouchLift = 0.25;
 
     private readonly Board board;
     private readonly BoardLayout layout;
