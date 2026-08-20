@@ -36,7 +36,7 @@ Sound flows out the same way the picture does: the board appends to a list of
 `Sound` values as it moves cards, `Home` hands the whole list to `audio.js` once
 per frame, and the browser decides what a "place" or a "flip" actually sounds
 like. Nothing is downloaded — a card is a burst of filtered noise, a foundation
-is a sine blip, and cards going home in a run climb a pentatonic scale. The
+is a brighter, shorter one, and the win is the one flourish with a tune to it. The
 speaker in the bottom-right corner mutes, as does `M`, and the setting is saved
 with the score.
 

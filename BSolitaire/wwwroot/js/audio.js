@@ -102,47 +102,31 @@ window.bSolitaireAudio = (() => {
         }
     }
 
-    // Cards going home in a run should climb, the way the classic cascade does — but a
-    // single card played by hand is just a ping. Rather than have C# track that, a
-    // foundation hit close behind the last one continues the run and anything slower
-    // starts the run over.
-    let foundationStep = 0;
-    let lastFoundation = -10;
-    const RUN_GAP = 0.5;
-
-    // Semitones above the root, held to a pentatonic run so a long cascade stays musical
-    // instead of turning into a chromatic siren.
-    const STEPS = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24];
     const ROOT = 523.25; // C5
 
+    // A card reaching a foundation is a card landing, told apart from the others by being
+    // brighter and shorter rather than by being pitched.
+    //
+    // It used to climb: each hit close behind the last one stepped up a pentatonic scale, in
+    // homage to the classic cascade. It sounded well for the four or five cards a player
+    // sends home by hand and turned into a rising siren for the fifty-two of a finish, which
+    // is exactly when it was playing most. The one flourish that stays is the one at the end,
+    // where a rising run is the whole point and it is heard once.
     function foundation(at) {
-        foundationStep = at - lastFoundation < RUN_GAP
-            ? Math.min(foundationStep + 1, STEPS.length - 1)
-            : 0;
-        lastFoundation = at;
-
-        tone(at, ROOT * Math.pow(2, STEPS[foundationStep] / 12), {
-            type: 'triangle',
-            gain: 0.18,
-            decay: 0.22
-        });
-        card(at, { freq: 2600, gain: 0.3, decay: 0.035 });
+        card(at, { freq: 2600, gain: 0.34, decay: 0.04 });
     }
 
     // Two hits of the same kind inside this window are one event as far as the ear is
-    // concerned, and stacking them only clips. The foundation run is exempt: rapid
-    // repeats are the whole point of it.
+    // concerned, and stacking them only clips.
     const MIN_GAP = 0.03;
     const lastPlayed = {};
 
     function play(sound, at) {
-        if (sound !== FOUNDATION) {
-            if (at - (lastPlayed[sound] === undefined ? -10 : lastPlayed[sound]) < MIN_GAP) {
-                return;
-            }
-
-            lastPlayed[sound] = at;
+        if (at - (lastPlayed[sound] === undefined ? -10 : lastPlayed[sound]) < MIN_GAP) {
+            return;
         }
+
+        lastPlayed[sound] = at;
 
         switch (sound) {
             case DEAL:
