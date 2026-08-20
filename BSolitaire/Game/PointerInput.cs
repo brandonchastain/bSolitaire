@@ -98,8 +98,9 @@ public sealed class PointerInput
             return;
         }
 
-        ClearSelection();
-
+        // The selection deliberately survives this. A press is also how a tap starts, and
+        // the second tap of a two-tap move lands on a pile that can usually be grabbed from
+        // — clearing here left that move unreachable for every pile holding a card.
         var rect = layout.CardRect(loc, indexInPile);
         drag = new DragState
         {
@@ -240,6 +241,7 @@ public sealed class PointerInput
     public void Cancel()
     {
         drag = null;
+        ClearSelection();
     }
 
     /// <summary>
@@ -275,6 +277,7 @@ public sealed class PointerInput
 
         // MakeMove refuses anything illegal, and the cards were never removed from their
         // pile, so a refusal is the snap-back.
+        ClearSelection();
         board.MakeMove(new Move(held.From, dest, held.Cards.Count));
     }
 
@@ -316,6 +319,14 @@ public sealed class PointerInput
         if (selected == null)
         {
             Select(loc, indexInPile);
+            return;
+        }
+
+        // Tapping the selection again puts it down. Otherwise this is a move onto the pile
+        // it already occupies, which is nothing but a refusal noise.
+        if (loc == selected)
+        {
+            ClearSelection();
             return;
         }
 
