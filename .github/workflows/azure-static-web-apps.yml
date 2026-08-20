@@ -6,8 +6,25 @@ on:
   workflow_dispatch:
 
 jobs:
+  # The deploy waits on this. The tests also run on their own workflow for pull requests;
+  # they are repeated here because a job can only gate another in the same workflow, and a
+  # deploy that goes out without them is the one case where it actually matters.
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Test
+        run: dotnet test BSolitaire.sln -c Release --logger 'console;verbosity=normal'
+
   build_and_deploy:
     name: Build and deploy
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

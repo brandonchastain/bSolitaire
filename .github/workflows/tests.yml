@@ -1,0 +1,23 @@
+name: Tests
+
+# Every pull request, and every push to master — so a change is checked before it is
+# reviewed and again after it lands, whichever way it got there.
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Test
+        run: dotnet test BSolitaire.sln -c Release --logger 'console;verbosity=normal'
