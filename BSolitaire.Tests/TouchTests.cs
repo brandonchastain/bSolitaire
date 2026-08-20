@@ -29,19 +29,55 @@ public class TouchTests
         // The card is drawn clear of the fingertip so it can be seen, and the drop is probed
         // from where the card is rather than from where the finger is — otherwise the player
         // aims the card and the board reads the finger.
+        //
+        // Aimed at a foundation rather than at a column, because a column is the one target
+        // that cannot tell the difference: it takes a drop anywhere down to the bottom edge
+        // of the board, so it accepts the card whether the lift is a quarter of a card, half
+        // of one, or nothing at all. A foundation covers its own slot and no more.
         var (board, layout, input) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
 
-        var target = Centre(layout.CardRect(Tableau(1), 0));
+        var grab = layout.CardRect(Tableau(0), 0);
+        var slot = layout.EmptySlot(Foundation(0));
 
-        // A finger half a card below the column still puts the card on the column.
-        input.Down(layout.CardRect(Tableau(0), 0).X + 5, layout.CardRect(Tableau(0), 0).Y + 5, touch: true);
-        input.Move(target.X, target.Y + layout.CardHeight * 0.5);
-        input.Up(target.X, target.Y + layout.CardHeight * 0.5);
+        // A finger a fifth of a card below the foundation still puts the card in it, because
+        // the card it is carrying is riding higher than that.
+        double x = slot.X + slot.W / 2;
+        double y = slot.Y + slot.H / 2 + layout.CardHeight * 0.2;
+
+        input.Down(grab.X + 5, grab.Y + 5, touch: true);
+        input.Move(x, y);
+        input.Up(x, y);
 
         Assert.Empty(board.TableauPiles[0]);
-        Assert.Equal(2, board.TableauPiles[1].Count);
+        Assert.Single(board.FoundationPiles[0]);
+    }
+
+    [Fact]
+    public void TheLiftIsNotSoTallThatEveryMoveGetsLonger()
+    {
+        // The other edge of it. The lift is paid for on every drop — placing a card on a pile
+        // means carrying the finger that far below it — so a card that rides too high costs
+        // travel on every move the player makes.
+        //
+        // Measured at the top edge of the slot rather than its middle, because the middle
+        // cannot tell: a card riding half a card high still lands in the slot from there. A
+        // finger on the slot's top edge is carrying a card that has overshot it entirely once
+        // the lift passes a quarter of a card.
+        var (board, layout, input) = Table();
+        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
+
+        var grab = layout.CardRect(Tableau(0), 0);
+        var slot = layout.EmptySlot(Foundation(0));
+
+        double x = slot.X + slot.W / 2;
+        double y = slot.Y;
+
+        input.Down(grab.X + 5, grab.Y + 5, touch: true);
+        input.Move(x, y);
+        input.Up(x, y);
+
+        Assert.Single(board.FoundationPiles[0]);
     }
 
     [Fact]
