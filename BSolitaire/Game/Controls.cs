@@ -113,9 +113,6 @@ public sealed class Controls
         input.Cancel();
     }
 
-    /// <summary>Double-click at (x, y): a shortcut for sending a card to its foundation.</summary>
-    public void DoubleClick(double x, double y) => input.DoubleClick(x, y);
-
     /// <summary>Reports whether the picture changed — hovering must not defeat the redraw
     /// check, so only a held stack counts.</summary>
     public bool Move(double x, double y) => input.Move(x, y);

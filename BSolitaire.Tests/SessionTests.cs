@@ -328,6 +328,44 @@ public class SessionTests
         Assert.False(game.CanFastForward);
     }
 
+    [Fact]
+    public void ADoubleTapPlaysOneCardHomeAndStopsThere()
+    {
+        // Through the whole input path this time, because the bug lived in the wiring rather
+        // than in the gesture: the host also had a dblclick handler, which the browser fires
+        // after the pair of taps that had already played the card home. It found the card
+        // that had been underneath sitting on top, one rank behind the foundation, and sent
+        // that home too — two cards for one tap.
+        var game = Sized();
+        var board = game.Board;
+        ClearBoard(board);
+
+        board.FoundationPiles[0].Add(FaceUp(Suit.Hearts, Rank.Ace));
+        board.TableauPiles[0].Add(FaceUp(Suit.Hearts, Rank.Three));
+        board.TableauPiles[0].Add(FaceUp(Suit.Hearts, Rank.Two));
+
+        var card = game.Layout.CardRect(new Location(PileKind.Tableau, 0), 1);
+        double x = card.X + card.W / 2;
+        double y = card.Y + Math.Min(card.H / 2, game.Layout.FanOffset / 2);
+
+        for (int tap = 0; tap < 2; tap++)
+        {
+            game.OnPointerDown(x, y, touch: true);
+            game.OnPointerUp(x, y);
+        }
+
+        Assert.Equal(2, board.FoundationPiles[0].Count);
+        Assert.Single(board.TableauPiles[0]);
+        Assert.Equal(Rank.Three, board.TableauPiles[0][0].Rank);
+    }
+
+    private static Card FaceUp(Suit suit, Rank rank)
+    {
+        var card = new Card(suit, rank);
+        card.Flip();
+        return card;
+    }
+
     private static void ClearBoard(Board board)
     {
         board.FaceDownPile.Clear();

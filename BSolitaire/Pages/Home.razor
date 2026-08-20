@@ -8,7 +8,6 @@
      @onpointerdown="HandlePointerDown"
      @onpointerup="HandlePointerUp"
      @onpointercancel="HandlePointerCancel"
-     @ondblclick="HandleDoubleClick"
      @onkeydown="HandleKeyDown" @onkeydown:preventDefault="true">
     <BECanvas @ref="canvasRef" />
 </div>
@@ -264,9 +263,10 @@
 
     private void HandlePointerCancel(PointerEventArgs e) => game.OnPointerCancel();
 
-    // dblclick rather than a hand-rolled two-tap timer: the browser already knows the platform's
-    // double-click interval, and mobile browsers synthesise it from a double tap.
-    private void HandleDoubleClick(MouseEventArgs e) => game.OnDoubleClick(e.OffsetX, e.OffsetY);
+    // There is no dblclick handler, deliberately. Two clicks already select a card and then
+    // play it home, which is the whole of what double-clicking one ever meant — and the
+    // browser sends a dblclick *after* that pair, which found the card underneath sitting on
+    // top and one rank behind the foundation, and sent that home too.
 
     // N is the host's own key rather than the game's: asking for a nickname means a JS
     // prompt, and Solitaire deliberately knows nothing about the browser.
