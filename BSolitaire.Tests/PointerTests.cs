@@ -267,37 +267,70 @@ public class PointerTests
     }
 
     [Fact]
-    public void DoubleClickingSendsACardHome()
+    public void TappingACardTwiceSendsItHome()
     {
         var (board, layout, input) = Table();
         board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
-        var (x, y) = Grab(layout, Tableau(0), 0);
+        var at = Grab(layout, Tableau(0), 0);
 
-        Assert.True(input.DoubleClick(x, y));
+        Tap(input, at);
+        Tap(input, at);
+
         Assert.Equal(1, board.FoundationTotal);
     }
 
     [Fact]
-    public void DoubleClickingACardWithNoFoundationDoesNothing()
+    public void TappingACardWithNoFoundationTwiceDoesNothing()
     {
         var (board, layout, input) = Table();
         board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Five));
-        var (x, y) = Grab(layout, Tableau(0), 0);
+        var at = Grab(layout, Tableau(0), 0);
 
-        Assert.False(input.DoubleClick(x, y));
+        Tap(input, at);
+        Tap(input, at);
+
         Assert.Equal(0, board.FoundationTotal);
+        Assert.Single(board.TableauPiles[0]);
     }
 
     [Fact]
-    public void DoubleClickingABuriedCardDoesNothing()
+    public void TappingABuriedCardTwiceDoesNothing()
     {
+        // Foundations take one card at a time, so a run has nowhere to go — and the second
+        // tap must not quietly send the top of it instead.
         var (board, layout, input) = Table();
         board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
         board.TableauPiles[0].Add(Up(Suit.Clubs, Rank.Three));
-        var (x, y) = Grab(layout, Tableau(0), 0);
+        var at = Grab(layout, Tableau(0), 0);
 
-        Assert.False(input.DoubleClick(x, y));
+        Tap(input, at);
+        Tap(input, at);
+
         Assert.Equal(0, board.FoundationTotal);
+        Assert.Equal(2, board.TableauPiles[0].Count);
+    }
+
+    [Fact]
+    public void ADoubleTapSendsExactlyOneCardHome()
+    {
+        // A double tap is two taps, and the two of them play the card home between them.
+        // There used to be a dblclick handler as well, which the browser fires *after* that
+        // pair — by which time the card that was underneath is sitting on top, one rank
+        // behind the foundation, and perfectly playable. Two cards went home for one tap.
+        //
+        // Taps are the only route now. Four of them in a row are two separate moves, which
+        // is what four taps are, and never three cards for two.
+        var (board, layout, input) = Table();
+        board.FoundationPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
+        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Three));
+        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Two));
+
+        Tap(input, Grab(layout, Tableau(0), 1));
+        Tap(input, Grab(layout, Tableau(0), 1));
+
+        Assert.Single(board.TableauPiles[0]);
+        Assert.Equal(Rank.Three, board.TableauPiles[0][0].Rank);
+        Assert.Equal(2, board.FoundationPiles[0].Count);
     }
 
     [Fact]
