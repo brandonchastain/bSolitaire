@@ -251,7 +251,18 @@ public sealed class BoardLayout
     {
         var slot = EmptySlot(loc);
         double bottom = loc.Kind == PileKind.Tableau ? Height : slot.Y + slot.H;
-        return new Rect(slot.X - 1, slot.Y - 1, slot.W + 2, Math.Max(slot.H, bottom - slot.Y) + 2);
+
+        // Reach a little past the slot, because a card's edge is stroked along its boundary
+        // and half that line lies outside it. Never past half a gutter, though: the region is
+        // cleared and only this pile is drawn back, so a region that reached its neighbour
+        // would take a bite out of a column nobody asked to repaint.
+        double bleed = Math.Max(1, Math.Min(gutter / 2, 3));
+
+        return new Rect(
+            slot.X - bleed,
+            slot.Y - bleed,
+            slot.W + 2 * bleed,
+            Math.Max(slot.H, bottom - slot.Y) + 2 * bleed);
     }
 
     public Rect EmptySlot(Location loc)

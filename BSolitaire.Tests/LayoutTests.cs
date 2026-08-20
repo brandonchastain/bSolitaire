@@ -288,6 +288,58 @@ public class LayoutTests
         Assert.Equal(-1, index); // nothing there to pick up
     }
 
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void APileRegionCoversEveryCardInIt(double width, double height)
+    {
+        // The region is the strip of board that gets cleared before a pile is drawn again.
+        // Anything the pile put on screen that falls outside it survives the repaint — which
+        // is how a drop-target ring left a pair of gold lines down the felt.
+        var board = new Board();
+        var layout = new BoardLayout(width, height);
+
+        foreach (var kind in Board.AllKinds)
+        {
+            for (int pileIndex = 0; pileIndex < board.PileCountOf(kind); pileIndex++)
+            {
+                var loc = new Location(kind, pileIndex);
+                var region = layout.PileRegion(loc);
+                var pile = board.Pile(loc);
+
+                for (int card = 0; card < Math.Max(1, pile.Count); card++)
+                {
+                    var rect = layout.CardRect(loc, card);
+
+                    Assert.True(rect.X >= region.X, $"{kind} {pileIndex} card {card} juts out to the left");
+                    Assert.True(rect.Y >= region.Y, $"{kind} {pileIndex} card {card} juts out above");
+                    Assert.True(rect.X + rect.W <= region.X + region.W + 0.001,
+                        $"{kind} {pileIndex} card {card} juts out to the right");
+                    Assert.True(rect.Y + rect.H <= region.Y + region.H + 0.001,
+                        $"{kind} {pileIndex} card {card} juts out below");
+                }
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void ATableauRegionNeverReachesItsNeighbour(double width, double height)
+    {
+        // The other half of the same rule. The region reaches a little past the slot so that
+        // a card's edge is cleared with it — but a region that reached the next column would
+        // clear part of a pile nobody is about to draw again, and take a bite out of it.
+        var layout = new BoardLayout(width, height);
+
+        for (int column = 0; column + 1 < 7; column++)
+        {
+            var left = layout.PileRegion(Tableau(column));
+            var right = layout.PileRegion(Tableau(column + 1));
+
+            Assert.True(left.X + left.W <= right.X + 0.001,
+                $"columns {column} and {column + 1} share board at {width}x{height}");
+        }
+    }
+
     private static IEnumerable<(double X, double Y)> Corners(Rect rect)
     {
         yield return (rect.X + 0.5, rect.Y + 0.5);

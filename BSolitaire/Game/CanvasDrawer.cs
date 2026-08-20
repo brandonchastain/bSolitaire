@@ -184,6 +184,16 @@ public class CanvasDrawer : IGameDrawer
     private const int AtlasRows = 4;
 
     /// <summary>
+    /// Slack around each cell, in CSS pixels. A card's edge is stroked along its own
+    /// boundary, so half the line lies outside the card — and a cell cut to the card exactly
+    /// loses that half twice over: it falls outside the rectangle that gets blitted, and the
+    /// neighbouring cell clears it away when its own face is drawn. Cards came out with no
+    /// outline at all. The padding is blitted along with the face, so what lands on the board
+    /// is what the card would have looked like drawn straight onto it.
+    /// </summary>
+    private const double AtlasPad = 2;
+
+    /// <summary>
     /// How many faces are drawn into the atlas per frame. The whole deck at once is a
     /// visible stall on every resize, and nothing needs the whole deck at once — the cells
     /// that are not ready yet are drawn the old way, so the board is right from the first
@@ -204,6 +214,12 @@ public class CanvasDrawer : IGameDrawer
     /// <summary>One cell of the atlas in backing pixels. Recomputed each pass.</summary>
     private double cellWidth;
     private double cellHeight;
+
+    /// <summary>The card the atlas was drawn for, in CSS pixels. A card is not always blitted
+    /// at its own size — held cards are a shade larger, turning ones are squeezed — so the
+    /// padding has to be scaled by however much the card it belongs to was.</summary>
+    private double cardWidth = 1;
+    private double cardHeight = 1;
 
     /// <summary>
     /// Whether there are still faces to draw into the atlas. A solitaire board is idle
@@ -238,7 +254,8 @@ public class CanvasDrawer : IGameDrawer
 
     /// <summary>What the atlas canvas needs to be, in CSS pixels, for this card size.</summary>
     public (double Width, double Height) AtlasSize(BoardLayout layout) =>
-        (layout.CardWidth * AtlasColumns, layout.CardHeight * AtlasRows);
+        ((layout.CardWidth + 2 * AtlasPad) * AtlasColumns,
+         (layout.CardHeight + 2 * AtlasPad) * AtlasRows);
 
     /// <summary>
     /// The atlas canvas has been resized, so everything in it was drawn for a card that no
@@ -524,8 +541,10 @@ public class CanvasDrawer : IGameDrawer
 
         // One cell of the atlas, in that canvas's own backing pixels — which is what a
         // source rectangle is measured in, unlike everything else the drawer says.
-        cellWidth = layout.CardWidth * pixelRatio;
-        cellHeight = layout.CardHeight * pixelRatio;
+        cellWidth = (layout.CardWidth + 2 * AtlasPad) * pixelRatio;
+        cellHeight = (layout.CardHeight + 2 * AtlasPad) * pixelRatio;
+        cardWidth = layout.CardWidth;
+        cardHeight = layout.CardHeight;
         double rankText = layout.CardHeight * (compact ? CompactRankText : RankText);
         rankFont = $"bold {rankText:F0}px sans-serif";
         tenFont = $"bold {rankText * TenScale:F0}px sans-serif";
@@ -830,16 +849,21 @@ public class CanvasDrawer : IGameDrawer
             // and nothing else. The fan is half a card now, so the strip reaches the suit
             // under the index and the lattice on a back — and drawing those was the whole
             // point of widening it. What used to be the cheap path is now the wrong picture.
+            // The whole cell, padding and all, laid over the rectangle the card was asked
+            // for and the same slack again around it.
+            double across = rect.W / cardWidth;
+            double down = rect.H / cardHeight;
+
             await ctx.DrawImageAsync(
                 atlasElement,
                 slot % AtlasColumns * cellWidth,
                 slot / AtlasColumns * cellHeight,
                 cellWidth,
                 cellHeight,
-                rect.X,
-                rect.Y,
-                rect.W,
-                rect.H);
+                rect.X - AtlasPad * across,
+                rect.Y - AtlasPad * down,
+                rect.W + 2 * AtlasPad * across,
+                rect.H + 2 * AtlasPad * down);
 
             return;
         }
@@ -980,11 +1004,14 @@ public class CanvasDrawer : IGameDrawer
     /// rectangle, so its corners are transparent and whatever was there would show.</summary>
     private async ValueTask RenderSlot(int slot, BoardLayout layout)
     {
+        double width = layout.CardWidth + 2 * AtlasPad;
+        double height = layout.CardHeight + 2 * AtlasPad;
+
         var cell = new Rect(
-            slot % AtlasColumns * layout.CardWidth,
-            slot / AtlasColumns * layout.CardHeight,
-            layout.CardWidth,
-            layout.CardHeight);
+            slot % AtlasColumns * width,
+            slot / AtlasColumns * height,
+            width,
+            height);
 
         await ctx.ClearRectAsync(cell.X, cell.Y, cell.W, cell.H);
 
@@ -992,7 +1019,15 @@ public class CanvasDrawer : IGameDrawer
             ? new Card(Suit.Spades, Rank.Ace)
             : new Card((Suit)(slot / 13), (Rank)(slot % 13 + 1));
 
-        await DrawCardDirect(card, cell, covered: false, up: slot != BackSlot);
+        // Inset by the padding, so the edge it strokes along its own boundary has somewhere
+        // to go rather than falling off the cell.
+        var face = new Rect(
+            cell.X + AtlasPad,
+            cell.Y + AtlasPad,
+            layout.CardWidth,
+            layout.CardHeight);
+
+        await DrawCardDirect(card, face, covered: false, up: slot != BackSlot);
     }
 
     /// <summary>
@@ -1073,12 +1108,23 @@ public class CanvasDrawer : IGameDrawer
     private async ValueTask DrawDropTarget(Board board, BoardLayout layout, Location loc)
     {
         var pile = board.Pile(loc);
-        var rect = pile.Count > 0 ? layout.CardRect(loc, pile.Count - 1) : layout.EmptySlot(loc);
+        var card = pile.Count > 0 ? layout.CardRect(loc, pile.Count - 1) : layout.EmptySlot(loc);
+        double width = Math.Max(2, card.W * 0.035);
 
-        await RoundedPath(rect, rect.W * CornerRadius);
+        // Set inside the card rather than along it. A stroke straddles the path it follows,
+        // so a ring on the boundary puts half its width outside the card — and outside the
+        // strip of board that gets cleared when this pile is repainted, which left a pair of
+        // gold lines down the felt every time a stack was put down.
+        var ring = new Rect(
+            card.X + width / 2,
+            card.Y + width / 2,
+            card.W - width,
+            card.H - width);
+
+        await RoundedPath(ring, ring.W * CornerRadius);
         await Fill("rgba(240, 192, 90, 0.20)");
         await ctx.FillAsync();
-        await LineWidth(Math.Max(2, rect.W * 0.035));
+        await LineWidth(width);
         await Stroke("#f0c05a");
         await ctx.StrokeAsync();
     }
