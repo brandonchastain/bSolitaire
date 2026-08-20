@@ -16,6 +16,10 @@ public class CanvasDrawer : IGameDrawer
     private readonly Canvas2DContext board;
     private readonly Canvas2DContext cache;
     private readonly ElementReference cacheElement;
+    private readonly Canvas2DContext heldCanvas;
+    private readonly ElementReference heldElement;
+    private readonly Canvas2DContext atlasCanvas;
+    private readonly ElementReference atlasElement;
     private readonly Stopwatch clock = Stopwatch.StartNew();
     private readonly Queue<double> recentDraws = new();
 
@@ -31,6 +35,20 @@ public class CanvasDrawer : IGameDrawer
     private string tenFont = "";
     private string courtFont = "";
     private double lastDrawMs;
+
+    /// <summary>
+    /// Whether cards are being printed small. A card fifty pixels wide with a face scaled
+    /// down to match is a card nobody can read: the pips become dots and the index becomes a
+    /// smudge. So below that size the deck changes rather than shrinks — a jumbo index and
+    /// one large suit, which is exactly what a real deck for a small hand does. Keyed to the
+    /// card rather than to the screen, so a desktop window dragged narrow gets the same deck
+    /// a phone does at the same card size. The layout decides; this only reads it.
+    /// </summary>
+    private bool compact;
+
+    /// <summary>The game being drawn this frame. Held because the pile-level drawing has to
+    /// ask which of its cards are currently in the air somewhere else.</summary>
+    private Solitaire? current;
 
     // Palette. Warm paper and a soft edge rather than white on hard black: a pure-white
     // card outlined in black is the single thing that most makes a drawn deck look drawn.
@@ -63,6 +81,19 @@ public class CanvasDrawer : IGameDrawer
     private const double PipSize = 0.07;
     private const double AceSize = 0.34;
     private const double CourtText = 0.30;
+
+    // The same face, printed for a small card. The index grows by half and moves in off the
+    // corner, the far index goes altogether — there is no room for two and the near one is
+    // what a fanned column shows — and the pips become a single large suit, because ten
+    // seven-per-cent marks on a fifty-pixel card is a texture rather than a count.
+    private const double CompactIndexAxis = 0.21;
+    private const double CompactRankRow = 0.15;
+    private const double CompactRankText = 0.32;
+    private const double CompactCornerSuitSize = 0.13;
+    private const double CompactCentreSuit = 0.36;
+
+    /// <summary>How much bigger a card is drawn while it is being carried.</summary>
+    private const double DragScale = 1.06;
 
     // Pip columns and the rows they sit on.
     private const double ColLeft = 0.37;
@@ -107,11 +138,139 @@ public class CanvasDrawer : IGameDrawer
 
     private readonly List<Location> repaint = new();
 
-    public CanvasDrawer(Canvas2DContext board, Canvas2DContext cache, ElementReference cacheElement)
+    // What the held stack was last drawn for. While these still describe what is being
+    // carried, the picture of it is still right and only its position has changed — which
+    // costs one call instead of one per card, and a run of seven used to cost seven times as
+    // much to carry as one. The lowest card is compared by identity rather than by where it
+    // came from: a pile and an index name a different card after every move, and reusing a
+    // picture of the card that used to be there is exactly the bug that invites.
+    private Card? heldBottom;
+    private int heldCount = -1;
+    private double heldCardWidth = -1;
+    private double heldFan = -1;
+
+    /// <summary>The piles the last drawn frame offered as drop targets, so the rings can be
+    /// painted into the cached board and taken out again when the stack is put down.</summary>
+    private readonly List<Location> cachedTargets = new();
+
+    /// <summary>What the corner controls were last painted saying, so they are only painted
+    /// again when one of them has something else to say.</summary>
+    private bool cachedMuted;
+    private bool cachedCanUndo;
+    private string cachedScore = "";
+
+    // ---- The card atlas -------------------------------------------------------------
+    //
+    // A printed face is a hundred-odd canvas calls, and every one of them is a hop into JS.
+    // That is affordable when a card is drawn because the position changed, and ruinous when
+    // it is drawn because the card is half a centimetre further along than it was last
+    // frame: a deal has nine cards in the air at once, and was costing 155ms a frame.
+    //
+    // So each of the fifty-two faces, and the back, is drawn once into a grid of card-sized
+    // cells and blitted from there. A moving card costs one call instead of a hundred, and
+    // so does a settled one — repainting a column got cheaper for free.
+
+    /// <summary>Faces plus the one back.</summary>
+    private const int SlotCount = 53;
+
+    /// <summary>The back's cell, after the fifty-two faces.</summary>
+    private const int BackSlot = 52;
+
+    /// <summary>Cells across the atlas. Thirteen ranks and the back make fourteen, which
+    /// keeps the grid four rows deep and both dimensions well inside what a mobile browser
+    /// will allocate — a single strip of fifty-three cards would be too tall for one.</summary>
+    private const int AtlasColumns = 14;
+
+    private const int AtlasRows = 4;
+
+    /// <summary>
+    /// How many faces are drawn into the atlas per frame. The whole deck at once is a
+    /// visible stall on every resize, and nothing needs the whole deck at once — the cells
+    /// that are not ready yet are drawn the old way, so the board is right from the first
+    /// frame and merely gets cheaper over the next few.
+    /// </summary>
+    private const int WarmPerFrame = 6;
+
+    private readonly bool[] atlasReady = new bool[SlotCount];
+
+    /// <summary>Device pixels per CSS pixel. The one place the drawer needs it: a cell of
+    /// the atlas is named in the atlas canvas's own backing pixels.</summary>
+    private double pixelRatio = 1;
+
+    /// <summary>False until the host has sized the atlas canvas for the current card. Until
+    /// then there is nowhere to put a face.</summary>
+    private bool atlasSized;
+
+    /// <summary>One cell of the atlas in backing pixels. Recomputed each pass.</summary>
+    private double cellWidth;
+    private double cellHeight;
+
+    /// <summary>
+    /// Whether there are still faces to draw into the atlas. A solitaire board is idle
+    /// almost all the time and the host skips drawing entirely while it is — so without
+    /// somewhere to ask, the atlas would only ever fill up during the very moments it is
+    /// meant to be making cheaper. The host fills it in the gaps instead.
+    /// </summary>
+    public bool AtlasIncomplete
+    {
+        get
+        {
+            if (!atlasSized)
+            {
+                return false;
+            }
+
+            foreach (bool ready in atlasReady)
+            {
+                if (!ready)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>Draws a few more faces into the atlas and nothing else. For frames the board
+    /// had no use for.</summary>
+    public ValueTask WarmUp(BoardLayout layout) => WarmAtlas(layout);
+
+    /// <summary>What the atlas canvas needs to be, in CSS pixels, for this card size.</summary>
+    public (double Width, double Height) AtlasSize(BoardLayout layout) =>
+        (layout.CardWidth * AtlasColumns, layout.CardHeight * AtlasRows);
+
+    /// <summary>
+    /// The atlas canvas has been resized, so everything in it was drawn for a card that no
+    /// longer exists. Thrown away rather than rescaled: a rescaled face is a blurred one,
+    /// and it refills over the next few frames anyway.
+    /// </summary>
+    public void AtlasResized(double dpr)
+    {
+        pixelRatio = dpr;
+        atlasSized = true;
+        Array.Clear(atlasReady);
+
+        // The held stack was drawn from the old faces too.
+        heldBottom = null;
+    }
+
+    public CanvasDrawer(
+        Canvas2DContext board,
+        Canvas2DContext cache,
+        ElementReference cacheElement,
+        Canvas2DContext held,
+        ElementReference heldElement,
+        Canvas2DContext atlas,
+        ElementReference atlasElement)
     {
         this.board = board;
         this.cache = cache;
         this.cacheElement = cacheElement;
+        this.heldCanvas = held;
+        this.heldElement = heldElement;
+        this.atlasCanvas = atlas;
+        this.atlasElement = atlasElement;
         ctx = board;
     }
 
@@ -120,8 +279,13 @@ public class CanvasDrawer : IGameDrawer
         Board board = game.Board;
         BoardLayout layout = game.Layout;
         DragState? drag = game.Drag;
+        current = game;
 
         double startedAt = clock.Elapsed.TotalMilliseconds;
+
+        // Before any pass, so nothing switches canvases mid-batch: a few more faces go into
+        // the atlas, and everything drawn this frame can use whatever is in it.
+        await WarmAtlas(layout);
 
         // The picture is in two parts. Everything under the pointer's hand — felt, empty
         // slots, every pile — changes only when a move is made, and costs by far the most to
@@ -139,6 +303,19 @@ public class CanvasDrawer : IGameDrawer
         // picking a card up and putting it down each cost a visible freeze.
         bool sizeChanged = layout.Width != cachedWidth || layout.Height != cachedHeight;
 
+        // The corner controls and the score line are as static as the felt is, and they were
+        // being redrawn every frame — the speaker alone is two dozen strokes and arcs. They
+        // go into the cached board with everything else, and are only redrawn when one of
+        // them actually says something different.
+        bool chromeChanged =
+            cachedMuted != game.Muted ||
+            cachedCanUndo != game.CanUndo ||
+            cachedScore != game.Score.Summary;
+
+        cachedMuted = game.Muted;
+        cachedCanUndo = game.CanUndo;
+        cachedScore = game.Score.Summary;
+
         repaint.Clear();
 
         if (!cacheValid || sizeChanged || board.AllDirty)
@@ -146,6 +323,7 @@ public class CanvasDrawer : IGameDrawer
             ctx = cache;
             await BeginPass(layout);
             await DrawStatic(board, layout, drag);
+            await DrawChrome(layout, game);
             await ctx.EndBatchAsync();
 
             cachedWidth = layout.Width;
@@ -163,6 +341,29 @@ public class CanvasDrawer : IGameDrawer
             // frame it is lifted. Once the hole is in the cached picture it stays correct for
             // the whole drag -- the cards are gone from the pile and stay gone -- so this
             // compares against the last frame instead of repainting the column every frame.
+            // The rings under a held stack are as static as the piles are: they are decided
+            // when the stack leaves its pile and cannot change until it is put down. Painting
+            // them into the cache means they cost two repaints per drag rather than eleven
+            // rounded rectangles on every frame of it.
+            if (!SameTargets(game.DropTargets))
+            {
+                foreach (var was in cachedTargets)
+                {
+                    if (!repaint.Contains(was))
+                    {
+                        repaint.Add(was);
+                    }
+                }
+
+                foreach (var now in game.DropTargets)
+                {
+                    if (!repaint.Contains(now))
+                    {
+                        repaint.Add(now);
+                    }
+                }
+            }
+
             var dragSource = drag?.From;
 
             if (dragSource != cachedDragSource)
@@ -178,7 +379,7 @@ public class CanvasDrawer : IGameDrawer
                 }
             }
 
-            if (repaint.Count > 0)
+            if (repaint.Count > 0 || chromeChanged)
             {
                 ctx = cache;
                 await BeginPass(layout);
@@ -188,11 +389,45 @@ public class CanvasDrawer : IGameDrawer
                     await DrawPileRegion(board, layout, loc, drag);
                 }
 
+                // A tableau column runs to the bottom of the board, so repainting one can
+                // take the corner controls with it. Cheaper to put them back every time the
+                // cache is touched than to work out whether this particular column reached
+                // them.
+                await DrawChrome(layout, game);
                 await ctx.EndBatchAsync();
             }
         }
 
+        // Before anything is blitted: if the stack under the pointer is not the one already
+        // drawn, draw it. This is the only frame of a drag that costs a card to draw.
+        if (drag != null)
+        {
+            await RenderHeld(drag, layout);
+        }
+
         cachedDragSource = drag?.From;
+
+        cachedTargets.Clear();
+        cachedTargets.AddRange(game.DropTargets);
+
+        // The winning cascade is painted into the cached board rather than over it, so every
+        // frame of it stays where it fell. That accumulation is the whole effect — a card
+        // that leaves no trail is just a card falling off a table.
+        if (game.Falling.Count > 0)
+        {
+            ctx = cache;
+            await BeginPass(layout);
+
+            foreach (var falling in game.Falling)
+            {
+                await DrawCard(
+                    falling.Card,
+                    new Rect(falling.X, falling.Y, layout.CardWidth, layout.CardHeight),
+                    covered: false);
+            }
+
+            await ctx.EndBatchAsync();
+        }
 
         ctx = this.board;
         await BeginPass(layout);
@@ -211,6 +446,13 @@ public class CanvasDrawer : IGameDrawer
             await DrawHover(board, layout, hovered, game.HoverIndex);
         }
 
+        // Cards between piles. Under the held stack, which is the one thing the player is
+        // steering and so belongs on top of everything.
+        foreach (var flight in game.InFlight)
+        {
+            await DrawCard(flight.Card, flight.Rect, covered: false, faceUp: flight.FaceUp);
+        }
+
         if (drag != null)
         {
             // Lift the held stack off the felt so it reads as above the board.
@@ -218,25 +460,34 @@ public class CanvasDrawer : IGameDrawer
             await ctx.SetShadowBlurAsync(12);
             await ctx.SetShadowOffsetYAsync(6);
 
-            for (int i = 0; i < drag.Cards.Count; i++)
-            {
-                var rect = new Rect(
-                    drag.X - drag.OffsetX,
-                    drag.Y - drag.OffsetY + i * layout.FanOffset,
-                    layout.CardWidth,
-                    layout.CardHeight);
+            // A shade larger than the board it is being moved across, about its own centre.
+            // Held things are nearer, and the drop is hit-tested from that same centre, so
+            // growing the card cannot move where it lands.
+            double grow = layout.CardWidth * (DragScale - 1) / 2;
 
-                await DrawCard(drag.Cards[i], rect, i < drag.Cards.Count - 1);
-            }
+            // One call, whatever the stack. The cards themselves were drawn into their own
+            // canvas when they were picked up — see RenderHeld — and the whole of it is
+            // blitted with the stack sitting at its top-left corner, so moving the stack is
+            // a matter of where the image goes rather than of drawing the cards again.
+            await ctx.DrawImageAsync(
+                heldElement,
+                drag.X - drag.OffsetX - grow,
+                drag.Y - drag.OffsetY - grow,
+                layout.Width * DragScale,
+                layout.Height * DragScale);
 
             await ctx.SetShadowColorAsync("rgba(0, 0, 0, 0)");
             await ctx.SetShadowBlurAsync(0);
             await ctx.SetShadowOffsetYAsync(0);
         }
 
-        if (game.State != GameState.Playing)
+        if (game.ShowBanner)
         {
+            // The panel dims the whole board, cached controls and all, so they are drawn
+            // again on top of it — turning the fanfare off is exactly what a player wants to
+            // do at the moment a game ends.
             await DrawBanner(layout, game.State);
+            await DrawChrome(layout, game);
         }
 
         if (game.Error != null)
@@ -245,9 +496,6 @@ public class CanvasDrawer : IGameDrawer
             await Font("bold 20px sans-serif");
             await ctx.FillTextAsync($"Error: {game.Error}", 24, 80);
         }
-
-        await DrawScore(layout, game.Score);
-        await DrawMute(layout, game.Muted);
 
         if (game.ShowStats)
         {
@@ -272,8 +520,15 @@ public class CanvasDrawer : IGameDrawer
         font = null;
         textAlign = null;
         lineWidth = -1;
-        rankFont = $"bold {layout.CardHeight * RankText:F0}px sans-serif";
-        tenFont = $"bold {layout.CardHeight * RankText * TenScale:F0}px sans-serif";
+        compact = layout.SmallCards;
+
+        // One cell of the atlas, in that canvas's own backing pixels — which is what a
+        // source rectangle is measured in, unlike everything else the drawer says.
+        cellWidth = layout.CardWidth * pixelRatio;
+        cellHeight = layout.CardHeight * pixelRatio;
+        double rankText = layout.CardHeight * (compact ? CompactRankText : RankText);
+        rankFont = $"bold {rankText:F0}px sans-serif";
+        tenFont = $"bold {rankText * TenScale:F0}px sans-serif";
         courtFont = $"{layout.CardHeight * CourtText:F0}px Georgia, serif";
 
         // One batch per pass: without it every Set*/Fill* call is its own JS interop round
@@ -297,6 +552,7 @@ public class CanvasDrawer : IGameDrawer
         await Fill(Felt);
         await ctx.FillRectAsync(region.X, region.Y, region.W, region.H);
         await DrawPile(board, layout, loc, drag);
+        await DrawDropTargetIfOffered(board, layout, loc);
     }
 
     /// <summary>
@@ -313,7 +569,9 @@ public class CanvasDrawer : IGameDrawer
             int pileCount = board.PileCountOf(kind);
             for (int pileIndex = 0; pileIndex < pileCount; pileIndex++)
             {
-                await DrawPile(board, layout, new Location(kind, pileIndex), drag);
+                var loc = new Location(kind, pileIndex);
+                await DrawPile(board, layout, loc, drag);
+                await DrawDropTargetIfOffered(board, layout, loc);
             }
         }
     }
@@ -329,6 +587,14 @@ public class CanvasDrawer : IGameDrawer
         int visibleCount = drag != null && drag.From == location
             ? Math.Min(pile.Count, drag.Index)
             : pile.Count;
+
+        // A card on its way here is painted in the air instead, so the pile stops short of
+        // it. Same idea as the hole a drag leaves behind, and for the same reason: a card
+        // has to be in exactly one place on screen.
+        if (current is { } game)
+        {
+            visibleCount = Math.Min(visibleCount, game.HiddenFrom(location));
+        }
 
         if (visibleCount == 0)
         {
@@ -430,6 +696,22 @@ public class CanvasDrawer : IGameDrawer
     }
 
     /// <summary>
+    /// The corner controls and the score line: everything that is on the board without being
+    /// part of the position. Painted into the cached board, so a frame that is only moving a
+    /// card does not repaint a speaker.
+    /// </summary>
+    private async ValueTask DrawChrome(BoardLayout layout, Solitaire game)
+    {
+        await DrawScore(layout, game.Score);
+        await DrawMute(layout, game.Muted);
+
+        if (game.CanUndo)
+        {
+            await DrawUndo(layout);
+        }
+    }
+
+    /// <summary>
     /// The mute toggle: a speaker in the bottom-right corner, above the score line.
     /// Drawn on the live pass rather than into the cached board, because it is a control
     /// rather than part of the position — and it has to survive the banner dimming the felt,
@@ -525,16 +807,51 @@ public class CanvasDrawer : IGameDrawer
     /// <summary>
     /// Draws one card. A <paramref name="covered"/> card has another lying over it, so only
     /// the strip along its top is ever seen: it gets its border and its rank and nothing
-    /// else. That is most of the cards on a dealt board, and skipping their faces is what
-    /// makes a printed pip layout affordable to draw at all.
-    /// </summary>
-    /// <summary>
-    /// Draws one card. A <paramref name="covered"/> card has another lying over it, so only
-    /// the strip along its top is ever seen: it gets its border and its rank and nothing
     /// else. That is most of the cards on a dealt board, and skipping the rest is what makes
     /// a drawn-out pip layout affordable at all.
     /// </summary>
-    private async ValueTask DrawCard(Card card, Rect rect, bool covered)
+    /// <param name="faceUp">
+    /// Which side to show, when that is not the side the card is actually lying. Only an
+    /// animation asks for this: a card turning over has to be drawn from its old face for
+    /// the first half of the turn, and the board has already recorded the new one.
+    /// </param>
+    private async ValueTask DrawCard(Card card, Rect rect, bool covered, bool? faceUp = null)
+    {
+        bool up = faceUp ?? card.IsFaceUp;
+        int slot = up ? (int)card.Suit * 13 + (int)card.Rank - 1 : BackSlot;
+
+        if (atlasReady[slot])
+        {
+            // One call. The cell holds the whole face, so a covered card is drawn complete
+            // and then covered by the card above it rather than being drawn short.
+            //
+            // That is a visible change, and a deliberate one. Leaving most of a covered card
+            // out was a saving that assumed a tight fan, where the strip on show is the rank
+            // and nothing else. The fan is half a card now, so the strip reaches the suit
+            // under the index and the lattice on a back — and drawing those was the whole
+            // point of widening it. What used to be the cheap path is now the wrong picture.
+            await ctx.DrawImageAsync(
+                atlasElement,
+                slot % AtlasColumns * cellWidth,
+                slot / AtlasColumns * cellHeight,
+                cellWidth,
+                cellHeight,
+                rect.X,
+                rect.Y,
+                rect.W,
+                rect.H);
+
+            return;
+        }
+
+        await DrawCardDirect(card, rect, covered, up);
+    }
+
+    /// <summary>
+    /// Draws one card the long way, mark by mark. Used for the faces the atlas does not hold
+    /// yet, and to fill the atlas itself.
+    /// </summary>
+    private async ValueTask DrawCardDirect(Card card, Rect rect, bool covered, bool up)
     {
         await RoundedPath(rect, rect.W * CornerRadius);
         await LineWidth(1);
@@ -543,7 +860,7 @@ public class CanvasDrawer : IGameDrawer
         await Stroke(CardEdge);
         await ctx.StrokeAsync();
 
-        if (!card.IsFaceUp)
+        if (!up)
         {
             await DrawBack(rect, covered);
             return;
@@ -556,28 +873,50 @@ public class CanvasDrawer : IGameDrawer
         await Font(rank.Length > 1 ? tenFont : rankFont);
         await Align("center");
 
-        double nearAxis = rect.X + rect.W * IndexAxis;
-        await ctx.FillTextAsync(rank, nearAxis, rect.Y + rect.H * RankRow);
+        double indexAxis = compact ? CompactIndexAxis : IndexAxis;
+        double rankRow = compact ? CompactRankRow : RankRow;
+        double nearAxis = rect.X + rect.W * indexAxis;
+        await ctx.FillTextAsync(rank, nearAxis, rect.Y + rect.H * rankRow);
 
         if (covered)
         {
             return;
         }
 
-        // The far index is the near one turned through half a turn, exactly as it is
-        // printed, so the card reads the same whichever way up you look at it.
-        double farAxis = rect.X + rect.W * (1 - IndexAxis);
-        await DrawInverted(rank, farAxis, rect.Y + rect.H * (1 - RankRow));
+        double cornerSize = rect.H * (compact ? CompactCornerSuitSize : CornerSuitSize);
+        double farAxis = rect.X + rect.W * (1 - indexAxis);
 
-        double cornerSize = rect.H * CornerSuitSize;
-        await DrawSuit(card.Suit, nearAxis, rect.Y + rect.H * SuitRow, cornerSize, false);
-        await DrawSuit(card.Suit, farAxis, rect.Y + rect.H * (1 - SuitRow), cornerSize, true);
+        if (!compact)
+        {
+            // The far index is the near one turned through half a turn, exactly as it is
+            // printed, so the card reads the same whichever way up you look at it. A small
+            // card gives it up: two of anything is one too many across fifty pixels, and a
+            // solitaire board is only ever read from one side anyway.
+            await DrawInverted(rank, farAxis, rect.Y + rect.H * (1 - rankRow));
+            await DrawSuit(card.Suit, farAxis, rect.Y + rect.H * (1 - SuitRow), cornerSize, true);
+        }
+
+        await DrawSuit(card.Suit, nearAxis, rect.Y + rect.H * (compact ? 0.34 : SuitRow), cornerSize, false);
 
         int value = (int)card.Rank;
 
         if (value >= 11)
         {
             await DrawCourt(rect, card.Suit, rank, colour);
+            return;
+        }
+
+        if (compact && value > 1)
+        {
+            // One large suit rather than a count of small ones. The rank is already set in
+            // the index at nearly a third of the card, so nothing is lost by not printing it
+            // twice — and what is gained is a card whose suit is legible across the room.
+            await DrawSuit(
+                card.Suit,
+                rect.X + rect.W * 0.58,
+                rect.Y + rect.H * 0.62,
+                rect.H * CompactCentreSuit,
+                false);
             return;
         }
 
@@ -592,6 +931,185 @@ public class CanvasDrawer : IGameDrawer
                 pipSize,
                 pip.Row > 0.5);
         }
+    }
+
+    /// <summary>
+    /// Puts a few more of the deck's faces into the atlas. Spread over frames rather than
+    /// done in one go: the whole deck is five thousand canvas calls, which is a visible stall
+    /// every time a window is resized — and nothing needs the whole deck at once, because a
+    /// face the atlas does not hold yet is simply drawn the old way.
+    /// </summary>
+    private async ValueTask WarmAtlas(BoardLayout layout)
+    {
+        if (!atlasSized)
+        {
+            return;
+        }
+
+        int drawn = 0;
+        var previous = ctx;
+        bool started = false;
+
+        for (int slot = 0; slot < SlotCount && drawn < WarmPerFrame; slot++)
+        {
+            if (atlasReady[slot])
+            {
+                continue;
+            }
+
+            if (!started)
+            {
+                ctx = atlasCanvas;
+                await BeginPass(layout);
+                started = true;
+            }
+
+            await RenderSlot(slot, layout);
+            atlasReady[slot] = true;
+            drawn++;
+        }
+
+        if (started)
+        {
+            await ctx.EndBatchAsync();
+            ctx = previous;
+        }
+    }
+
+    /// <summary>Draws one face into its cell. The cell is cleared first: a card is a rounded
+    /// rectangle, so its corners are transparent and whatever was there would show.</summary>
+    private async ValueTask RenderSlot(int slot, BoardLayout layout)
+    {
+        var cell = new Rect(
+            slot % AtlasColumns * layout.CardWidth,
+            slot / AtlasColumns * layout.CardHeight,
+            layout.CardWidth,
+            layout.CardHeight);
+
+        await ctx.ClearRectAsync(cell.X, cell.Y, cell.W, cell.H);
+
+        var card = slot == BackSlot
+            ? new Card(Suit.Spades, Rank.Ace)
+            : new Card((Suit)(slot / 13), (Rank)(slot % 13 + 1));
+
+        await DrawCardDirect(card, cell, covered: false, up: slot != BackSlot);
+    }
+
+    /// <summary>
+    /// Draws the held stack into its own canvas, with the lowest card at the top-left corner
+    /// and everything else transparent. Only when what is held has changed: a stack keeps the
+    /// same cards, the same order, and the same size for the whole of a drag, so this runs
+    /// once per pick-up and the frames in between are a single blit.
+    /// </summary>
+    private async ValueTask RenderHeld(DragState drag, BoardLayout layout)
+    {
+        if (ReferenceEquals(heldBottom, drag.Cards[0]) &&
+            heldCount == drag.Cards.Count &&
+            heldCardWidth == layout.CardWidth &&
+            heldFan == layout.FanOffset)
+        {
+            return;
+        }
+
+        heldBottom = drag.Cards[0];
+        heldCount = drag.Cards.Count;
+        heldCardWidth = layout.CardWidth;
+        heldFan = layout.FanOffset;
+
+        var previous = ctx;
+        ctx = heldCanvas;
+        await BeginPass(layout);
+
+        // Transparent, not felt-coloured: this image is laid over the board, and anything
+        // opaque around the cards would take a bite out of it.
+        await ctx.ClearRectAsync(0, 0, layout.Width, layout.Height);
+
+        for (int i = 0; i < drag.Cards.Count; i++)
+        {
+            var rect = new Rect(0, i * layout.FanOffset, layout.CardWidth, layout.CardHeight);
+            await DrawCard(drag.Cards[i], rect, i < drag.Cards.Count - 1);
+        }
+
+        await ctx.EndBatchAsync();
+        ctx = previous;
+    }
+
+    /// <summary>Whether the offered drop targets are the ones already painted into the
+    /// cached board. Order is decided by the same walk every time, so this can compare
+    /// position by position.</summary>
+    private bool SameTargets(IReadOnlyList<Location> targets)
+    {
+        if (targets.Count != cachedTargets.Count)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < targets.Count; i++)
+        {
+            if (targets[i] != cachedTargets[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Rings this pile if it is one of the ones being offered. Called as each pile
+    /// is painted into the cache, so the ring lands on top of the pile's own cards.</summary>
+    private async ValueTask DrawDropTargetIfOffered(Board board, BoardLayout layout, Location loc)
+    {
+        if (current is { } game && game.DropTargets.Contains(loc))
+        {
+            await DrawDropTarget(board, layout, loc);
+        }
+    }
+
+    /// <summary>
+    /// Rings a pile that would take the stack being carried. Drawn under the held cards, in
+    /// the same gold the hover outline uses — it is the same statement, made about a
+    /// destination rather than a source.
+    /// </summary>
+    private async ValueTask DrawDropTarget(Board board, BoardLayout layout, Location loc)
+    {
+        var pile = board.Pile(loc);
+        var rect = pile.Count > 0 ? layout.CardRect(loc, pile.Count - 1) : layout.EmptySlot(loc);
+
+        await RoundedPath(rect, rect.W * CornerRadius);
+        await Fill("rgba(240, 192, 90, 0.20)");
+        await ctx.FillAsync();
+        await LineWidth(Math.Max(2, rect.W * 0.035));
+        await Stroke("#f0c05a");
+        await ctx.StrokeAsync();
+    }
+
+    /// <summary>
+    /// The undo button: an arrow curling back on itself, beside the mute toggle. Drawn only
+    /// while there is something to undo, and hit-tested on the same condition — a button
+    /// that is not there must not be pressable.
+    /// </summary>
+    private async ValueTask DrawUndo(BoardLayout layout)
+    {
+        var button = layout.UndoButton;
+        double size = button.W;
+        double cx = button.X + size / 2;
+        double cy = button.Y + size / 2;
+
+        await RoundedPath(button, size * 0.22);
+        await Fill("#12351f");
+        await ctx.FillAsync();
+        await LineWidth(1);
+        await Stroke("#cfe0d2");
+        await ctx.StrokeAsync();
+
+        // The glyph rather than a hand-drawn arrow. A circular arrow with a head on it is
+        // half a dozen strokes and a triangle, and at the size a thumb wants the button to
+        // be, every one of those is two or three pixels — it came out as a bare curve. The
+        // finish button already leans on ▶▶ for the same reason.
+        await Fill("#f4f8f4");
+        await Font($"{size * 0.62:F0}px sans-serif");
+        await Align("center");
+        await ctx.FillTextAsync("↺", cx, cy + size * 0.02);
     }
 
     /// <summary>

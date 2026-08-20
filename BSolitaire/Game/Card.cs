@@ -23,4 +23,11 @@ public class Card
     {
         isFaceUp = !isFaceUp;
     }
+
+    /// <summary>
+    /// Puts the card a definite way up rather than the other way up from however it is now.
+    /// Undo is what needs this: restoring a position means saying what was true then, not
+    /// counting how many times the card has been turned since.
+    /// </summary>
+    public void SetFaceUp(bool value) => isFaceUp = value;
 }

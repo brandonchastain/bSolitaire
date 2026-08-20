@@ -38,6 +38,15 @@ public sealed class PointerInput
     /// <summary>How far the pointer must travel before a press counts as a drag, not a tap.</summary>
     private const double DragThreshold = 4;
 
+    /// <summary>
+    /// How far above a fingertip the held stack rides, as a fraction of a card. A mouse
+    /// pointer is a few pixels of arrow and the card can sit under it; a finger covers the
+    /// card it picked up, and a card you cannot see is one you cannot aim. Folded into the
+    /// grab offset rather than added at draw time, so the drop lands where the card looks
+    /// like it will — the alternative is a card that reads one column and drops in another.
+    /// </summary>
+    private const double TouchLift = 0.5;
+
     private readonly Board board;
     private readonly BoardLayout layout;
 
@@ -58,6 +67,11 @@ public sealed class PointerInput
     private Location? hoverPile;
     private int hoverIndex = -1;
 
+    // Where the held stack would be accepted, worked out once when it is picked up. A touch
+    // screen has no hover, so this is the only way the board can answer "where does this
+    // go?" before the player commits to an answer of their own.
+    private readonly List<Location> dropTargets = new();
+
     public PointerInput(Board board, BoardLayout layout)
     {
         this.board = board;
@@ -75,8 +89,19 @@ public sealed class PointerInput
     /// <see cref="HoverPile"/> is null.</summary>
     public int HoverIndex => hoverIndex;
 
-    /// <summary>Pointer pressed at (x, y). Grabs a stack if one is under the pointer.</summary>
-    public void Down(double x, double y)
+    /// <summary>Every pile that would accept the stack being dragged. Empty unless a stack
+    /// is actually held.</summary>
+    public IReadOnlyList<Location> DropTargets =>
+        drag is { Active: true } ? dropTargets : Array.Empty<Location>();
+
+    /// <summary>
+    /// Pointer pressed at (x, y). Grabs a stack if one is under the pointer.
+    /// </summary>
+    /// <param name="touch">
+    /// True for a finger or a pen rather than a mouse. The only thing it changes is where the
+    /// held cards ride relative to the pointer — see <see cref="TouchLift"/>.
+    /// </param>
+    public void Down(double x, double y, bool touch = false)
     {
         downX = x;
         downY = y;
@@ -108,11 +133,41 @@ public sealed class PointerInput
             Index = indexInPile,
             Cards = cards,
             OffsetX = x - rect.X,
-            OffsetY = y - rect.Y,
+            OffsetY = y - rect.Y + (touch ? layout.CardHeight * TouchLift : 0),
             X = x,
             Y = y,
         };
+
+        FindDropTargets(loc, cards.Count);
     }
+
+    /// <summary>
+    /// Asks the rules where this stack could go, once, at the moment it leaves its pile.
+    /// Neither the stack nor the rest of the board can change while it is held, so the answer
+    /// cannot go stale — and the same <see cref="Rules.IsLegal"/> that will judge the drop is
+    /// what answers, so the board never offers a target that would then refuse the card.
+    /// </summary>
+    private void FindDropTargets(Location from, int count)
+    {
+        dropTargets.Clear();
+
+        foreach (var kind in DropKinds)
+        {
+            int pileCount = board.PileCountOf(kind);
+            for (int pileIndex = 0; pileIndex < pileCount; pileIndex++)
+            {
+                var to = new Location(kind, pileIndex);
+
+                if (to != from && Rules.IsLegal(board, new Move(from, to, count)))
+                {
+                    dropTargets.Add(to);
+                }
+            }
+        }
+    }
+
+    /// <summary>The only two kinds of pile anything can be dropped on.</summary>
+    private static readonly PileKind[] DropKinds = [PileKind.Tableau, PileKind.Foundation];
 
     /// <summary>
     /// Pointer moved to (x, y). Returns true if the picture changed, which is only while a
@@ -193,6 +248,7 @@ public sealed class PointerInput
         finally
         {
             drag = null;
+            dropTargets.Clear();
         }
     }
 
@@ -241,6 +297,7 @@ public sealed class PointerInput
     public void Cancel()
     {
         drag = null;
+        dropTargets.Clear();
         ClearSelection();
     }
 
@@ -322,11 +379,18 @@ public sealed class PointerInput
             return;
         }
 
-        // Tapping the selection again puts it down. Otherwise this is a move onto the pile
-        // it already occupies, which is nothing but a refusal noise.
+        // Tapping the selection again is the shortcut for sending a card home. It is the
+        // double-click move, spelt as two separate taps: mobile browsers synthesise dblclick
+        // unreliably under a board that has claimed the touch gesture for dragging, and a
+        // player who has already tapped a card once is holding exactly the right idea of
+        // what a second tap on it should do. Falls back to putting the card down.
         if (loc == selected)
         {
-            ClearSelection();
+            if (!SendHome(loc))
+            {
+                ClearSelection();
+            }
+
             return;
         }
 
@@ -337,6 +401,29 @@ public sealed class PointerInput
             board.MakeMove(new Move(selected.Value, loc, selectedCount));
             ClearSelection();
         }
+    }
+
+    /// <summary>
+    /// Plays the top card of a pile to its foundation, if it has one. The same move a drag
+    /// there would make — <see cref="Rules"/> still has the last word — so a card with no
+    /// home does nothing and the caller can treat that as "the shortcut did not apply".
+    /// </summary>
+    private bool SendHome(Location loc)
+    {
+        var pile = board.Pile(loc);
+
+        if (loc.Kind == PileKind.Foundation || selectedCount != 1 || pile.Count == 0)
+        {
+            return false;
+        }
+
+        if (board.FoundationFor(pile[^1]) is not { } dest)
+        {
+            return false;
+        }
+
+        ClearSelection();
+        return board.MakeMove(new Move(loc, dest, 1));
     }
 
     /// <summary>

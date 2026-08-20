@@ -1,4 +1,4 @@
-﻿namespace BSolitaire.Game;
+namespace BSolitaire.Game;
 
 /// <summary>
 /// Holds the cards, piles, and state of the Solitaire game.
@@ -98,6 +98,36 @@ public class Board
     private void MarkDirty(Location loc) => dirty.Add(loc);
 
     /// <summary>
+    /// Says a pile needs repainting although its contents did not change. The animator is
+    /// what needs this: a card in flight is held out of the pile it landed on, so the pile
+    /// has to be redrawn once more when the flight ends and the card belongs there again.
+    /// </summary>
+    public void Touch(Location loc) => MarkDirty(loc);
+
+    private readonly List<Motion> motions = new();
+
+    /// <summary>
+    /// Cards that have moved or turned over since the last <see cref="ClearMotions"/>. Named
+    /// in the same spirit as <see cref="Sounds"/> — the position reports what happened and
+    /// nothing more; <see cref="Animator"/> is what turns that into something on screen.
+    /// </summary>
+    public IReadOnlyList<Motion> Motions => motions;
+
+    public void ClearMotions() => motions.Clear();
+
+    /// <summary>The same ceiling as the sound queue, and for the same reason: nothing drains
+    /// this unless a frame loop is running.</summary>
+    private const int MaxQueuedMotions = 64;
+
+    private void Moved(Motion motion)
+    {
+        if (motions.Count < MaxQueuedMotions)
+        {
+            motions.Add(motion);
+        }
+    }
+
+    /// <summary>
     /// Records that a search proved this position cannot be won. Only the search can know
     /// this, so it is told to the board rather than worked out by it. Ignored once a game has
     /// ended, and undone by the next move.
@@ -110,9 +140,63 @@ public class Board
         }
     }
 
+    /// <summary>
+    /// Which deal this is. Bumped only by <see cref="Reset"/>, unlike <see cref="Version"/>,
+    /// which counts positions. Anything that must happen once per game rather than once per
+    /// position — counting a deal in the record — keys off this, so taking a move back does
+    /// not present the same deal as a fresh one.
+    /// </summary>
+    public int DealId { get; private set; }
+
+    /// <summary>
+    /// Positions to go back to, most recent last. A snapshot rather than an inverse move:
+    /// undoing a move also has to put back the card it turned over, and the cheapest way to
+    /// be sure every such consequence is undone is to not work out what they were.
+    /// </summary>
+    private readonly List<Snapshot> history = new();
+
+    /// <summary>How far back a player can go. Long enough to cover any mistake worth taking
+    /// back, short enough that a very long game cannot grow the list without bound.</summary>
+    private const int MaxUndo = 200;
+
+    /// <summary>
+    /// Whether there is a move to take back. A won deal is finished and stays finished —
+    /// it has been counted in the record, and the cards are busy falling off the screen.
+    /// </summary>
+    public bool CanUndo => history.Count > 0 && State != GameState.Won;
+
+    private void PushUndo()
+    {
+        if (history.Count == MaxUndo)
+        {
+            history.RemoveAt(0);
+        }
+
+        history.Add(Snapshot.Of(this));
+    }
+
+    /// <summary>Puts the board back the way it was before the last move. Returns false when
+    /// there is nothing to go back to.</summary>
+    public bool Undo()
+    {
+        if (!CanUndo)
+        {
+            return false;
+        }
+
+        history[^1].RestoreTo(this);
+        history.RemoveAt(history.Count - 1);
+
+        Play(Sound.Undo);
+        AllDirty = true;
+        Version++;
+        return true;
+    }
+
     /// <summary>Shuffles a new deck and deals it. The old game is simply dropped.</summary>
     public void Reset()
     {
+        history.Clear();
         FaceDownPile.Clear();
         FaceUpPile.Clear();
 
@@ -128,9 +212,39 @@ public class Board
 
         Dealer.Deal(FaceDownPile, TableauPiles);
         Play(Sound.Deal);
+        AnnounceDeal();
         AllDirty = true;
         State = GameState.Playing;
+        CanFastForward = false;
         Version++;
+        DealId++;
+    }
+
+    /// <summary>
+    /// Reports the deal as twenty-eight cards leaving the stock, in the order they were
+    /// dealt: a row at a time, left to right. The dealer has already put them where they go,
+    /// so this is only the account of it — but the order is what lets the deal be watched
+    /// rather than just appear, so it is worth being exact about.
+    /// </summary>
+    private void AnnounceDeal()
+    {
+        var stock = new Location(PileKind.FaceDown, 0);
+
+        for (int row = 0; row < NumTableauPiles; row++)
+        {
+            for (int pileIndex = row; pileIndex < NumTableauPiles; pileIndex++)
+            {
+                var card = TableauPiles[pileIndex][row];
+                Moved(new Motion(
+                    MotionKind.Move,
+                    card,
+                    stock,
+                    0,
+                    new Location(PileKind.Tableau, pileIndex),
+                    row,
+                    Reveals: card.IsFaceUp));
+            }
+        }
     }
 
     /// <summary>The cards in a pile.</summary>
@@ -253,11 +367,35 @@ public class Board
 
         if (Rules.IsLegal(this, move))
         {
+            // Where the cards sat and where they are about to sit, read off before the move
+            // rather than after it: those two slots are the ends of the flight, and once the
+            // lists have been spliced neither of them can be recovered.
+            int fromIndex = from.Count - move.Count;
+            int toIndex = to.Count;
+
+            PushUndo();
+
             // move the cards (could be multiple) from from to to.
             // do not reverse the order of cards, preserve order.
             var cardsToMove = from.GetRange(from.Count - move.Count, move.Count);
             from.RemoveRange(from.Count - move.Count, move.Count);
             to.AddRange(cardsToMove);
+
+            // The stock's deal is the one move that turns its card over on the way. Every
+            // other card is showing the same face at both ends of the trip.
+            bool reveals = move.From.Kind == PileKind.FaceDown;
+
+            for (int i = 0; i < cardsToMove.Count; i++)
+            {
+                Moved(new Motion(
+                    MotionKind.Move,
+                    cardsToMove[i],
+                    move.From,
+                    fromIndex + i,
+                    move.To,
+                    toIndex + i,
+                    reveals));
+            }
         }
         else
         {
@@ -290,6 +428,10 @@ public class Board
                     // After the landing, not instead of it: uncovering a card is a second
                     // thing happening, and the ear expects it a beat late.
                     Play(Sound.Flip);
+
+                    var uncovered = move.From;
+                    int index = TableauPiles[uncovered.PileIndex].Count - 1;
+                    Moved(new Motion(MotionKind.Flip, topCard, uncovered, index, uncovered, index));
                 }
             }
         }
@@ -368,6 +510,8 @@ public class Board
             return false;
         }
 
+        PushUndo();
+
         for (int i = FaceUpPile.Count - 1; i >= 0; i--)
         {
             var card = FaceUpPile[i];
@@ -381,5 +525,78 @@ public class Board
         MarkDirty(new Location(PileKind.FaceUp, 0));
         RefreshState();
         return true;
+    }
+
+    /// <summary>
+    /// A whole position, kept so it can be handed back. Cards are held by reference — they
+    /// are the same fifty-two objects for the life of a deal — but which way up each one is
+    /// lies on the card itself and is copied, because that is exactly what a move changes
+    /// behind the player's back.
+    /// </summary>
+    private sealed class Snapshot
+    {
+        private readonly Card[][] piles;
+        private readonly bool[][] faceUp;
+        private readonly GameState state;
+        private readonly bool canFastForward;
+
+        private Snapshot(Card[][] piles, bool[][] faceUp, GameState state, bool canFastForward)
+        {
+            this.piles = piles;
+            this.faceUp = faceUp;
+            this.state = state;
+            this.canFastForward = canFastForward;
+        }
+
+        public static Snapshot Of(Board board)
+        {
+            var sources = board.EveryPile();
+            var piles = new Card[sources.Length][];
+            var faceUp = new bool[sources.Length][];
+
+            for (int i = 0; i < sources.Length; i++)
+            {
+                piles[i] = sources[i].ToArray();
+                faceUp[i] = new bool[piles[i].Length];
+
+                for (int j = 0; j < piles[i].Length; j++)
+                {
+                    faceUp[i][j] = piles[i][j].IsFaceUp;
+                }
+            }
+
+            return new Snapshot(piles, faceUp, board.State, board.CanFastForward);
+        }
+
+        public void RestoreTo(Board board)
+        {
+            var targets = board.EveryPile();
+
+            for (int i = 0; i < targets.Length; i++)
+            {
+                targets[i].Clear();
+                targets[i].AddRange(piles[i]);
+
+                for (int j = 0; j < piles[i].Length; j++)
+                {
+                    piles[i][j].SetFaceUp(faceUp[i][j]);
+                }
+            }
+
+            board.State = state;
+            board.CanFastForward = canFastForward;
+        }
+    }
+
+    /// <summary>Every pile, in one fixed order. Only the snapshot needs the board flattened
+    /// like this, and it needs the same order both times.</summary>
+    private List<Card>[] EveryPile()
+    {
+        var all = new List<Card>[2 + NumFoundationPiles + NumTableauPiles];
+        all[0] = FaceDownPile;
+        all[1] = FaceUpPile;
+        FoundationPiles.CopyTo(all, 2);
+        TableauPiles.CopyTo(all, 2 + NumFoundationPiles);
+        return all;
     }
 }

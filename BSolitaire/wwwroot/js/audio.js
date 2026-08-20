@@ -5,7 +5,8 @@
 // a sound (see Game/Sound.cs) and this file decides what that means.
 window.bSolitaireAudio = (() => {
     // Indices, in the order Sound's members are declared. C# sends ints.
-    const DEAL = 0, FLIP = 1, PLACE = 2, STOCK = 3, RECYCLE = 4, INVALID = 5, FOUNDATION = 6, WIN = 7;
+    const DEAL = 0, FLIP = 1, PLACE = 2, STOCK = 3, RECYCLE = 4, INVALID = 5, FOUNDATION = 6, WIN = 7,
+          UNDO = 8;
 
     const VOLUME = 0.35;
 
@@ -174,6 +175,14 @@ window.bSolitaireAudio = (() => {
                 foundation(at);
                 break;
 
+            case UNDO:
+                // A place run backwards: the pitch falls instead of landing flat, which is
+                // as close as a noise gets to saying "that did not happen".
+                tone(at, 420, { type: 'triangle', gain: 0.16, decay: 0.12 });
+                tone(at + 0.05, 300, { type: 'triangle', gain: 0.14, decay: 0.14 });
+                card(at, { freq: 1200, q: 1.1, gain: 0.3, decay: 0.05 });
+                break;
+
             case WIN:
                 [0, 4, 7, 12, 16, 19, 24].forEach((semitone, i) => {
                     tone(at + i * 0.09, ROOT * Math.pow(2, semitone / 12), {
@@ -183,6 +192,44 @@ window.bSolitaireAudio = (() => {
                     });
                 });
                 break;
+        }
+    }
+
+    // What each noise feels like in the hand. A phone can say things the speaker cannot —
+    // it works with the sound turned down, in a pocket, in a room where a solitaire game
+    // making noises would be rude — and a card landing is exactly the sort of small
+    // confirmation that is better felt than heard. Milliseconds; a list alternates buzz
+    // and pause. Nothing here is longer than a card landing.
+    const BUZZ = {
+        [FLIP]: 8,
+        [PLACE]: 12,
+        [STOCK]: 8,
+        [RECYCLE]: [12, 30, 12],
+        [INVALID]: [22, 40, 22],
+        [FOUNDATION]: [10, 25, 18],
+        [UNDO]: [8, 30, 8],
+        [WIN]: [30, 60, 30, 60, 90],
+    };
+
+    // Only the strongest of a frame's noises is felt. Several overlapping patterns queue up
+    // in the vibration hardware and arrive as one long undifferentiated buzz.
+    const BUZZ_RANK = [DEAL, FLIP, STOCK, PLACE, UNDO, RECYCLE, FOUNDATION, INVALID, WIN];
+
+    function buzz(sounds) {
+        if (!navigator.vibrate) {
+            return;
+        }
+
+        let best = null;
+        for (const sound of sounds) {
+            if (BUZZ[sound] !== undefined &&
+                (best === null || BUZZ_RANK.indexOf(sound) > BUZZ_RANK.indexOf(best))) {
+                best = sound;
+            }
+        }
+
+        if (best !== null) {
+            navigator.vibrate(BUZZ[best]);
         }
     }
 
@@ -202,7 +249,16 @@ window.bSolitaireAudio = (() => {
         // One call per frame carrying everything the board asked for, so a deal is a
         // single interop hop rather than fourteen.
         play: (sounds) => {
-            if (muted || !sounds || sounds.length === 0 || !ensure()) {
+            if (muted || !sounds || sounds.length === 0) {
+                return;
+            }
+
+            // Felt before it is heard, and independently of it: the audio context can fail
+            // to exist — an old browser, a refused unlock — and the board should still
+            // answer in the hand when it does.
+            buzz(sounds);
+
+            if (!ensure()) {
                 return;
             }
 

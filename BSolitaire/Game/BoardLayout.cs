@@ -13,8 +13,32 @@ public sealed class BoardLayout
     /// <summary>Playing-card proportions, height over width.</summary>
     private const double CardAspect = 1.4;
 
-    /// <summary>Gap between cards, as a fraction of card width.</summary>
+    /// <summary>
+    /// Gap between cards, as a fraction of card width. Seven columns and their gutters have
+    /// to fit across the window, so on a narrow screen this is not decoration — it is the
+    /// twelve per cent of the width that is not card. A phone gives it up: there is nothing
+    /// else on screen for the board to be crowded by, and the cards need every pixel.
+    /// </summary>
     private const double GutterRatio = 0.14;
+
+    private const double CompactGutterRatio = 0.05;
+
+    /// <summary>Margin down either side, as a fraction of card width. A full gutter on a
+    /// desktop, next to nothing on a phone, for the same reason.</summary>
+    private const double MarginRatio = 0.14;
+
+    private const double CompactMarginRatio = 0.03;
+
+    /// <summary>
+    /// The board is compact below this and roomy above it, and in between it is somewhere
+    /// between the two. Blended rather than switched: a threshold made the card jump nine
+    /// per cent — and *downwards*, since a wider window that has just started paying for
+    /// desktop gutters has less left over for card. Widening a window must never shrink a
+    /// card, so nothing here is allowed to be a step.
+    /// </summary>
+    private const double CompactBelow = 420;
+
+    private const double RoomyAbove = 700;
 
     /// <summary>Cards stop growing here, so the board doesn't look absurd on a big screen.</summary>
     private const double MaxCardWidth = 110;
@@ -26,6 +50,7 @@ public sealed class BoardLayout
     private const int FannedCardsToFit = 13;
 
     private double gutter;
+    private double margin;
     private double originX;
     private double topRowY;
     private double tableauY;
@@ -39,6 +64,30 @@ public sealed class BoardLayout
     public double Width { get; private set; }
 
     public double Height { get; private set; }
+
+    /// <summary>
+    /// How much of a phone this board is: 1 for a handset, 0 for a window, and the blend in
+    /// between. Everything that differs between the two is interpolated across it, so a
+    /// window being dragged narrower has cards that only ever grow.
+    /// </summary>
+    public double Compactness { get; private set; }
+
+    /// <summary>Whether the board is laid out more for a phone than for a window. Only for
+    /// the handful of decisions that cannot be a blend, like a minimum tap target.</summary>
+    public bool Compact => Compactness > 0.5;
+
+    /// <summary>
+    /// Whether the deck should be printed with a jumbo index and one large suit rather than
+    /// a full pip layout. This is a question about the card, not about the screen — a fifty
+    /// pixel card is unreadable on a phone held upright and equally unreadable in a desktop
+    /// window dragged narrow, and deciding it from the viewport had the smaller card getting
+    /// the *more* detailed face on the wrong side of a threshold.
+    /// </summary>
+    public bool SmallCards => CardWidth < SmallCardWidth;
+
+    /// <summary>Where a full pip layout stops being worth printing: below this a pip is
+    /// under four and a half pixels across.</summary>
+    private const double SmallCardWidth = 64;
 
     /// <summary>Derived from the viewport — never set directly.</summary>
     public double CardWidth { get; private set; }
@@ -54,6 +103,14 @@ public sealed class BoardLayout
 
     /// <summary>The button inside <see cref="Banner"/> that deals a new game.</summary>
     public Rect NewGameButton { get; private set; }
+
+    /// <summary>
+    /// Takes the last move back. Sits beside the mute toggle in the bottom-right corner, in
+    /// the same reliably empty strip and for the same reasons — and it has to be on the felt
+    /// rather than on a key, because the device most likely to need an undo is the one with
+    /// no keyboard.
+    /// </summary>
+    public Rect UndoButton { get; private set; }
 
     /// <summary>The offer to play out a game that is already decided. Sits at the bottom of
     /// the board, clear of the tableau: by the time it appears the columns have shrunk to the
@@ -82,25 +139,42 @@ public sealed class BoardLayout
         // Width has to hold seven tableau columns plus a gutter between each and either
         // side. Height has to hold the top row, a tableau column, and room to fan below
         // it. Whichever constraint is tighter decides the card size.
-        double byWidth = width / (TableauColumns + (TableauColumns + 1) * GutterRatio);
-        double byHeight = height / (3 * GutterRatio + 3.2 * CardAspect);
+        Compactness = 1 - Smoothstep(width, CompactBelow, RoomyAbove);
+        double gutterRatio = Blend(CompactGutterRatio, GutterRatio);
+        double marginRatio = Blend(CompactMarginRatio, MarginRatio);
+
+        double byWidth = width /
+            (TableauColumns + (TableauColumns - 1) * gutterRatio + 2 * marginRatio);
+        double byHeight = height / (3 * gutterRatio + 3.2 * CardAspect);
 
         CardWidth = Math.Max(1, Math.Min(MaxCardWidth, Math.Min(byWidth, byHeight)));
         CardHeight = CardWidth * CardAspect;
-        gutter = CardWidth * GutterRatio;
+        gutter = CardWidth * gutterRatio;
+        margin = CardWidth * marginRatio;
 
         // Centre the board rather than letting it hug the left edge of a wide window.
-        double boardWidth = TableauColumns * CardWidth + (TableauColumns + 1) * gutter;
+        double boardWidth = TableauColumns * CardWidth + (TableauColumns - 1) * gutter + 2 * margin;
         originX = Math.Max(0, (width - boardWidth) / 2);
 
-        topRowY = gutter;
-        tableauY = topRowY + CardHeight + gutter * 1.5;
+        // The gutter is nearly nothing on a phone, and a top row flush against the edge of
+        // the screen reads as cut off rather than as tight. This is the one gap that gets a
+        // floor under it.
+        topRowY = Math.Max(gutter, CardWidth * 0.08);
+        tableauY = topRowY + CardHeight + Math.Max(gutter * 1.5, CardWidth * 0.1);
 
         // Fan tightly enough that a long column still fits, but never so tightly that the
         // cards underneath stop being grabbable — especially with a fingertip.
         double available = Math.Max(CardHeight, height - tableauY - gutter);
         double toFit = (available - CardHeight) / (FannedCardsToFit - 1);
-        FanOffset = Math.Clamp(toFit, CardHeight * 0.12, CardHeight * 0.28);
+
+        // A phone is short of width and long on height, and seven columns across a narrow
+        // screen cap the card at about a seventh of it however the gutters are spent. So the
+        // height is where the difference gets made: fanning at half a card rather than a
+        // quarter shows the index *and* the suit of every buried card instead of a sliver of
+        // the index, and it fills a board that otherwise sits in the top third of the screen.
+        // A thirteen-card column still fits — that is what toFit is — so this only ever
+        // takes room nothing else was using.
+        FanOffset = Math.Clamp(toFit, CardHeight * 0.12, CardHeight * Blend(0.5, 0.28));
 
         // Sized off the card rather than the viewport, so the panel and its text keep the
         // same proportions as everything else on the board.
@@ -118,20 +192,37 @@ public sealed class BoardLayout
 
         // The score line runs along the bottom edge, so the button sits clear above it
         // rather than on top of it.
-        double muteSize = CardWidth * 0.42;
+        // Big enough to hit with a thumb, which on a phone is the whole of the requirement:
+        // a fifth of a card is a comfortable target even when a card is only fifty pixels.
+        double muteSize = Math.Max(CardWidth * 0.42, Compact ? 36 : 0);
         MuteButton = new Rect(
-            width - muteSize - gutter,
+            width - muteSize - margin,
             height - muteSize - 26,
             muteSize,
             muteSize);
+
+        UndoButton = new Rect(MuteButton.X - muteSize - gutter, MuteButton.Y, muteSize, muteSize);
 
         double ffW = Math.Min(width - 2 * gutter, CardWidth * 2.8);
         double ffH = CardHeight * 0.42;
         FastForwardButton = new Rect((width - ffW) / 2, height - ffH - gutter * 2, ffW, ffH);
     }
 
+    /// <summary>The phone value or the window value, or wherever between them this board
+    /// sits. Every difference between the two layouts goes through here.</summary>
+    private double Blend(double phone, double window) =>
+        phone + (window - phone) * (1 - Compactness);
+
+    /// <summary>A smooth 0-to-1 ramp between two widths, flat at both ends. Flat matters: a
+    /// linear ramp still changes the layout's mind abruptly at each end of the range.</summary>
+    private static double Smoothstep(double value, double from, double to)
+    {
+        double t = Math.Clamp((value - from) / (to - from), 0, 1);
+        return t * t * (3 - 2 * t);
+    }
+
     /// <summary>Left edge of one of the seven columns the whole board is built on.</summary>
-    private double ColumnX(int column) => originX + gutter + column * (CardWidth + gutter);
+    private double ColumnX(int column) => originX + margin + column * (CardWidth + gutter);
 
     public Rect CardRect(Location loc, int indexInPile)
     {

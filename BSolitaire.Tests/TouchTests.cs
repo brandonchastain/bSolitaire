@@ -1,0 +1,221 @@
+using BSolitaire.Game;
+using Xunit;
+using static BSolitaire.Tests.Positions;
+
+namespace BSolitaire.Tests;
+
+/// <summary>
+/// The gestures a finger makes, which are not the gestures a mouse makes. A pointer is a few
+/// pixels of arrow with a hover state; a fingertip is a centimetre of skin with none, and it
+/// sits on top of the thing it is trying to aim. Everything here is about that difference.
+/// </summary>
+public class TouchTests
+{
+    private const double Width = 390;
+    private const double Height = 844;
+
+    private static (Board Board, BoardLayout Layout, PointerInput Input) Table()
+    {
+        var board = Empty();
+        var layout = new BoardLayout(Width, Height);
+        return (board, layout, new PointerInput(board, layout));
+    }
+
+    private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
+
+    [Fact]
+    public void ATouchedStackRidesAboveTheFinger()
+    {
+        // The card is drawn clear of the fingertip so it can be seen, and the drop is probed
+        // from where the card is rather than from where the finger is — otherwise the player
+        // aims the card and the board reads the finger.
+        var (board, layout, input) = Table();
+        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
+        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+
+        var target = Centre(layout.CardRect(Tableau(1), 0));
+
+        // A finger half a card below the column still puts the card on the column.
+        input.Down(layout.CardRect(Tableau(0), 0).X + 5, layout.CardRect(Tableau(0), 0).Y + 5, touch: true);
+        input.Move(target.X, target.Y + layout.CardHeight * 0.5);
+        input.Up(target.X, target.Y + layout.CardHeight * 0.5);
+
+        Assert.Empty(board.TableauPiles[0]);
+        Assert.Equal(2, board.TableauPiles[1].Count);
+    }
+
+    [Fact]
+    public void AMousePutsTheCardUnderThePointer()
+    {
+        // The same drag with a mouse: no lift, so aiming half a card low misses.
+        var (board, layout, input) = Table();
+        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
+        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+
+        var from = Centre(layout.CardRect(Tableau(0), 0));
+        var target = Centre(layout.CardRect(Tableau(1), 0));
+
+        input.Down(from.X, from.Y);
+        input.Move(target.X, target.Y);
+        input.Up(target.X, target.Y);
+
+        Assert.Empty(board.TableauPiles[0]);
+        Assert.Equal(2, board.TableauPiles[1].Count);
+    }
+
+    [Fact]
+    public void APickedUpStackSaysWhereItCouldGo()
+    {
+        // A touch screen has no hover, so this is the only way the board can answer "does
+        // this go here?" before the player has committed to an answer of their own.
+        var (board, layout, input) = Table();
+        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
+        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.TableauPiles[2].Add(Up(Suit.Clubs, Rank.Ten));
+        board.TableauPiles[3].Add(Up(Suit.Diamonds, Rank.Four));
+
+        var from = Centre(layout.CardRect(Tableau(0), 0));
+        input.Down(from.X, from.Y, touch: true);
+
+        // Nothing is offered until the press has actually become a drag.
+        Assert.Empty(input.DropTargets);
+
+        input.Move(from.X + 60, from.Y + 60);
+
+        // The red nine goes on either black ten, and nowhere else on this board.
+        Assert.Contains(Tableau(1), input.DropTargets);
+        Assert.Contains(Tableau(2), input.DropTargets);
+        Assert.DoesNotContain(Tableau(3), input.DropTargets);
+        Assert.DoesNotContain(Tableau(0), input.DropTargets);
+    }
+
+    [Fact]
+    public void EveryOfferedTargetWouldReallyTakeTheCard()
+    {
+        // The offer and the drop have to be the same question, or the board lights up a
+        // column and then refuses the card put on it.
+        var (board, layout, input) = Table();
+        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
+        board.FoundationPiles[1].Add(Up(Suit.Hearts, Rank.Two));
+
+        var from = Centre(layout.CardRect(Tableau(0), 0));
+        input.Down(from.X, from.Y, touch: true);
+        input.Move(from.X + 60, from.Y + 60);
+
+        foreach (var target in input.DropTargets)
+        {
+            Assert.True(Rules.IsLegal(board, new Move(Tableau(0), target, 1)),
+                $"{target} was offered but would refuse the card");
+        }
+
+        // An ace has a home on any empty foundation, and none on the two of its own suit.
+        Assert.Contains(Foundation(0), input.DropTargets);
+        Assert.DoesNotContain(Foundation(1), input.DropTargets);
+    }
+
+    [Fact]
+    public void TheOfferGoesAwayWhenTheStackIsPutDown()
+    {
+        var (board, layout, input) = Table();
+        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
+        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+
+        var from = Centre(layout.CardRect(Tableau(0), 0));
+        input.Down(from.X, from.Y, touch: true);
+        input.Move(from.X + 60, from.Y + 60);
+        Assert.NotEmpty(input.DropTargets);
+
+        input.Up(from.X + 60, from.Y + 60);
+        Assert.Empty(input.DropTargets);
+    }
+
+    [Fact]
+    public void TappingACardTwiceSendsItHome()
+    {
+        // The double-click shortcut, spelt as two separate taps. Mobile browsers synthesise
+        // dblclick unreliably over a board that has claimed the touch gesture for dragging,
+        // and a player who has already tapped a card once has exactly the right idea of what
+        // tapping it again should mean.
+        var (board, layout, input) = Table();
+        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
+
+        var at = Centre(layout.CardRect(Tableau(0), 0));
+
+        input.Down(at.X, at.Y, touch: true);
+        input.Up(at.X, at.Y);
+        Assert.Single(board.TableauPiles[0]); // selected, not moved
+
+        input.Down(at.X, at.Y, touch: true);
+        input.Up(at.X, at.Y);
+
+        Assert.Empty(board.TableauPiles[0]);
+        Assert.Equal(Rank.Ace, board.FoundationPiles[(int)Suit.Hearts][0].Rank);
+    }
+
+    [Fact]
+    public void TappingACardWithNoHomeTwiceJustPutsItDown()
+    {
+        var (board, layout, input) = Table();
+        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
+        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+
+        var at = Centre(layout.CardRect(Tableau(0), 0));
+
+        input.Down(at.X, at.Y, touch: true);
+        input.Up(at.X, at.Y);
+        input.Down(at.X, at.Y, touch: true);
+        input.Up(at.X, at.Y);
+
+        Assert.Single(board.TableauPiles[0]);
+
+        // Put down, not still held: a tap on the ten now selects the ten rather than moving
+        // the nine onto it.
+        var ten = Centre(layout.CardRect(Tableau(1), 0));
+        input.Down(ten.X, ten.Y, touch: true);
+        input.Up(ten.X, ten.Y);
+
+        Assert.Single(board.TableauPiles[0]);
+        Assert.Single(board.TableauPiles[1]);
+    }
+
+    [Fact]
+    public void TappingARunTwiceDoesNotSendItHome()
+    {
+        // Foundations take one card at a time, so a run of two has nowhere to go — and the
+        // second tap must not quietly send the top card of it instead.
+        var (board, layout, input) = Table();
+        board.TableauPiles[0].Add(Up(Suit.Spades, Rank.Two));
+        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
+
+        var at = layout.CardRect(Tableau(0), 0);
+        double x = at.X + at.W / 2;
+        double y = at.Y + Math.Min(at.H / 2, layout.FanOffset / 2);
+
+        input.Down(x, y, touch: true);
+        input.Up(x, y);
+        input.Down(x, y, touch: true);
+        input.Up(x, y);
+
+        Assert.Equal(2, board.TableauPiles[0].Count);
+    }
+
+    [Fact]
+    public void TwoTapsStillMoveAStackToAnotherPile()
+    {
+        // The shortcut must not have cost the board the two-tap move it is built on.
+        var (board, layout, input) = Table();
+        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
+        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+
+        var nine = Centre(layout.CardRect(Tableau(0), 0));
+        var ten = Centre(layout.CardRect(Tableau(1), 0));
+
+        input.Down(nine.X, nine.Y, touch: true);
+        input.Up(nine.X, nine.Y);
+        input.Down(ten.X, ten.Y, touch: true);
+        input.Up(ten.X, ten.Y);
+
+        Assert.Empty(board.TableauPiles[0]);
+        Assert.Equal(2, board.TableauPiles[1].Count);
+    }
+}

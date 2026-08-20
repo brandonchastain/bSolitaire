@@ -9,7 +9,7 @@ public sealed class ScoreKeeper
 {
     private readonly Board board;
 
-    private int recordedVersion = -1;
+    private int recordedDeal = -1;
 
     public ScoreKeeper(Board board) => this.board = board;
 
@@ -40,17 +40,18 @@ public sealed class ScoreKeeper
     /// whether anything was counted. Keyed to the board's version rather than to a flag this
     /// class clears: a finished board reports the same state on every frame until it is dealt
     /// again, and dealing again does not always come through the game's reset — the banner's
-    /// button resets the board itself. A deal is over at one version and the next deal starts
-    /// at another, so the version is the one thing that is true however the game was started.
+    /// button resets the board itself. The deal's own identity is what this keys on rather
+    /// than the position's: a player who takes a move back off a stuck board is still playing
+    /// the same deal, and it must not be counted twice for getting stuck twice.
     /// </summary>
     public bool Update()
     {
-        if (board.State == GameState.Playing || recordedVersion == board.Version)
+        if (board.State == GameState.Playing || recordedDeal == board.DealId)
         {
             return false;
         }
 
-        recordedVersion = board.Version;
+        recordedDeal = board.DealId;
         Score.Games++;
 
         if (board.State == GameState.Won)

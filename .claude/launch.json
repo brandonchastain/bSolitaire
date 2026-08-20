@@ -4,9 +4,9 @@
     {
       "name": "bsolitaire",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["run", "--project", "BSolitaire", "--urls", "http://localhost:5099"],
-      "port": 5099,
-      "autoPort": false
+      "runtimeArgs": ["run", "--project", "BSolitaire", "--urls", "http://localhost:5098"],
+      "port": 5098,
+      "autoPort": true
     }
   ]
 }

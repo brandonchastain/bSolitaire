@@ -1,15 +1,28 @@
 html, body {
     margin: 0;
-    height: 100%;
+
+    /* Dynamic viewport height, not 100%: on a phone the plain unit is the screen minus
+       whatever browser furniture happens to be showing, so the board was sized for a
+       window that grew the moment the URL bar slid away. */
+    height: 100dvh;
     overflow: hidden;
+    overscroll-behavior: none;
     background: #0b6b3a;
     color: #e8f0e8;
     font-family: system-ui, sans-serif;
 }
 
 #board {
-    /* Fills the window; the canvas inside is sized in JS. */
-    height: 100%;
+    /* Fills the window, inside the phone's safe areas — a rounded corner or a home
+       indicator over the corner of the board is a card that cannot be picked up. Inset
+       rather than padded: the canvas has to start exactly where the element does, because
+       pointer coordinates arrive relative to the element and the game reads them as
+       board pixels. */
+    position: fixed;
+    top: env(safe-area-inset-top, 0px);
+    right: env(safe-area-inset-right, 0px);
+    bottom: env(safe-area-inset-bottom, 0px);
+    left: env(safe-area-inset-left, 0px);
     outline: none;
     -webkit-tap-highlight-color: transparent;
 

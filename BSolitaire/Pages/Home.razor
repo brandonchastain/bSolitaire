@@ -1,4 +1,4 @@
-﻿@page "/"
+@page "/"
 @using System.Text.Json
 @implements IDisposable
 @inject IJSRuntime JS
@@ -7,7 +7,6 @@
 <div id="board" tabindex="0"
      @onpointerdown="HandlePointerDown"
      @onpointerup="HandlePointerUp"
-     @onpointerleave="HandlePointerCancel"
      @onpointercancel="HandlePointerCancel"
      @ondblclick="HandleDoubleClick"
      @onkeydown="HandleKeyDown" @onkeydown:preventDefault="true">
@@ -33,6 +32,20 @@
     <BECanvas @ref="cacheRef" />
 </div>
 
+@* ...and the same trick again for the stack under the pointer, which is the only thing on
+   the board that moves every frame. What it *looks* like never changes while it is held —
+   only where it is — so it is drawn once when it is picked up and blitted from here. *@
+<div id="held" style="position: absolute; left: -99999px; top: 0; visibility: hidden;">
+    <BECanvas @ref="heldRef" />
+</div>
+
+@* Every face in the deck, drawn once at the current card size and blitted from there
+   afterwards. A printed pip layout is a hundred-odd canvas calls, and a moving card was
+   paying that on every frame it moved. *@
+<div id="atlas" style="position: absolute; left: -99999px; top: 0; visibility: hidden;">
+    <BECanvas @ref="atlasRef" />
+</div>
+
 @code {
     // The host component owns the plumbing: it wires the JS animation frame
     // loop and browser events to the game, and nothing else.
@@ -40,7 +53,9 @@
 
     private BECanvasComponent canvasRef = default!;
     private BECanvasComponent cacheRef = default!;
-    private IGameDrawer? drawer;
+    private BECanvasComponent heldRef = default!;
+    private BECanvasComponent atlasRef = default!;
+    private CanvasDrawer? drawer;
     private DotNetObjectReference<Home>? selfRef;
     private bool faulted;
 
@@ -55,7 +70,11 @@
         drawer = new CanvasDrawer(
             await canvasRef.CreateCanvas2DAsync(),
             await cacheRef.CreateCanvas2DAsync(),
-            cacheRef.CanvasReference);
+            cacheRef.CanvasReference,
+            await heldRef.CreateCanvas2DAsync(),
+            heldRef.CanvasReference,
+            await atlasRef.CreateCanvas2DAsync(),
+            atlasRef.CanvasReference);
         selfRef = DotNetObjectReference.Create(this);
         await JS.InvokeVoidAsync("bSolitaire.start", selfRef);
 
@@ -64,8 +83,27 @@
         await LoadScore();
     }
 
+    /// <summary>
+    /// The viewport changed. The game is told in CSS pixels and never hears about the device
+    /// pixel ratio — but the drawer does, because blitting one cell out of the card atlas
+    /// means naming a rectangle in the atlas's own backing pixels.
+    /// </summary>
     [JSInvokable]
-    public void OnResize(double width, double height) => game.Resize(width, height);
+    public async Task OnResize(double width, double height, double pixelRatio)
+    {
+        game.Resize(width, height);
+
+        if (drawer is null)
+        {
+            return;
+        }
+
+        // Every face in the atlas was drawn for the old card size, so the atlas is now
+        // wrong. Resized and abandoned here; it refills itself over the next few frames.
+        var (atlasWidth, atlasHeight) = drawer.AtlasSize(game.Layout);
+        await JS.InvokeVoidAsync("bSolitaire.sizeAtlas", atlasWidth, atlasHeight);
+        drawer.AtlasResized(pixelRatio);
+    }
 
     [JSInvokable]
     public async Task OnFrame(double timestampMs, bool moved, double x, double y)
@@ -97,9 +135,17 @@
             PlaySounds();
 
             // The board is static almost all the time and the canvas keeps the last
-            // frame, so redrawing an unchanged board is pure waste.
+            // frame, so redrawing an unchanged board is pure waste. The idle frames are
+            // worth something to the drawer, though: it builds its atlas of card faces in
+            // them, so that the faces are ready before anything moves rather than being
+            // drawn during the first thing that does.
             if (!game.NeedsRedraw)
             {
+                if (drawer.AtlasIncomplete)
+                {
+                    await drawer.WarmUp(game.Layout);
+                }
+
                 return;
             }
 
@@ -205,7 +251,14 @@
 
     // Pointer events rather than click: they cover mouse, touch, and pen, and a tap is
     // just a press that never travelled — the game turns that back into a click itself.
-    private void HandlePointerDown(PointerEventArgs e) => game.OnPointerDown(e.OffsetX, e.OffsetY);
+    // Which device it was is passed on because it changes one thing: a finger covers the
+    // card it is holding, so a touched stack rides above the pointer rather than under it.
+    //
+    // There is no pointerleave handler on the board. js/game.js captures the pointer on
+    // press, so a drag that wanders off the edge of the window keeps reporting to us and
+    // keeps its cards — leaving mid-drag used to drop them.
+    private void HandlePointerDown(PointerEventArgs e) =>
+        game.OnPointerDown(e.OffsetX, e.OffsetY, e.PointerType != "mouse");
 
     private void HandlePointerUp(PointerEventArgs e) => game.OnPointerUp(e.OffsetX, e.OffsetY);
 
