@@ -9,6 +9,7 @@ public enum PlayerCommand
 {
     None,
     FastForward,
+    Undo,
     ToggleMute,
     ToggleStats,
     NewGame
@@ -43,15 +44,21 @@ public sealed class Controls
     /// <summary>The pile the pointer is resting on and could pick up from, or null.</summary>
     public Location? HoverPile => input.HoverPile;
 
+    /// <summary>Every pile that would accept the stack being dragged.</summary>
+    public IReadOnlyList<Location> DropTargets => input.DropTargets;
+
     /// <summary>Index of the lowest card the pointer would pick up from
     /// <see cref="HoverPile"/>.</summary>
     public int HoverIndex => input.HoverIndex;
 
+    /// <param name="touch">True for a finger or a pen rather than a mouse.</param>
     /// <param name="fastForwardOffered">
     /// Whether the play-it-out button is on screen. The button is drawn only when the offer
     /// stands, and a button that is not drawn must not be pressable.
     /// </param>
-    public PlayerCommand Down(double x, double y, bool fastForwardOffered)
+    /// <param name="undoOffered">Whether there is a move to take back, and so whether the
+    /// undo button is on screen at all. Same rule as above.</param>
+    public PlayerCommand Down(double x, double y, bool touch, bool fastForwardOffered, bool undoOffered)
     {
         // The buttons sit over the felt, so they have to take the press before the piles do.
         // The release that follows has to be swallowed too: PointerInput never saw the press,
@@ -63,6 +70,12 @@ public sealed class Controls
             return PlayerCommand.FastForward;
         }
 
+        if (undoOffered && layout.UndoButton.Contains(x, y))
+        {
+            pressConsumed = true;
+            return PlayerCommand.Undo;
+        }
+
         // The mute toggle sits in the gap column, where no pile ever is, so it only has to
         // take the press ahead of the felt. Same swallowed release as the button above.
         if (layout.MuteButton.Contains(x, y))
@@ -72,7 +85,7 @@ public sealed class Controls
         }
 
         pressConsumed = false;
-        input.Down(x, y);
+        input.Down(x, y, touch);
         return PlayerCommand.None;
     }
 
@@ -86,6 +99,13 @@ public sealed class Controls
 
         input.Up(x, y);
     }
+
+    /// <summary>
+    /// Swallows the press that is already in progress, and the release that will follow it.
+    /// The session needs this for the one press that is neither a move nor a button: the tap
+    /// that cuts the winning cascade short, which must not also land on the board underneath.
+    /// </summary>
+    public void Consume() => pressConsumed = true;
 
     public void Cancel()
     {
@@ -109,6 +129,7 @@ public sealed class Controls
         "KeyF" => PlayerCommand.ToggleStats,
         "KeyR" => PlayerCommand.NewGame,
         "KeyM" => PlayerCommand.ToggleMute,
+        "KeyZ" or "Backspace" => PlayerCommand.Undo,
         "Space" or "Enter" => PlayerCommand.FastForward,
         _ => PlayerCommand.None
     };

@@ -30,5 +30,9 @@ public enum Sound
     Foundation,
 
     /// <summary>All fifty-two home.</summary>
-    Win
+    Win,
+
+    /// <summary>A move taken back. Deliberately unlike a place: the ear should be able to
+    /// tell a move being made from a move being unmade without looking.</summary>
+    Undo
 }

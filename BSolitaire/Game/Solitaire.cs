@@ -17,6 +17,12 @@ public class Solitaire
     private readonly Analyzer analyzer;
     private readonly FastForward fastForward;
     private readonly ScoreKeeper scores;
+    private readonly Animator animator;
+    private readonly WinCascade cascade;
+
+    /// <summary>The deal the cascade has already been thrown for, so a won board that sits
+    /// on screen does not restart it on every frame.</summary>
+    private int celebratedDeal = -1;
 
     public Solitaire()
     {
@@ -27,6 +33,8 @@ public class Solitaire
         analyzer = new Analyzer(Board);
         fastForward = new FastForward(Board);
         scores = new ScoreKeeper(Board);
+        animator = new Animator(Board, Layout);
+        cascade = new WinCascade(Board, Layout);
     }
 
     public Board Board { get; }
@@ -46,6 +54,38 @@ public class Solitaire
 
     /// <summary>The stack currently held by the pointer, or null.</summary>
     public DragState? Drag => controls.Drag;
+
+    /// <summary>Cards part-way between two piles, to be painted over the board.</summary>
+    public IReadOnlyList<CardInFlight> InFlight => animator.InFlight;
+
+    /// <summary>
+    /// The index from which a pile must not be drawn, because the cards above it are still
+    /// in the air on their way to it.
+    /// </summary>
+    public int HiddenFrom(Location loc) => animator.HiddenFrom(loc);
+
+    /// <summary>Piles that would accept the stack being dragged. Empty unless one is held —
+    /// this is the touch answer to a hover, which a finger cannot do.</summary>
+    public IReadOnlyList<Location> DropTargets => controls.DropTargets;
+
+    /// <summary>Cards bouncing down the board after a win.</summary>
+    public IReadOnlyList<FallingCard> Falling => cascade.Falling;
+
+    /// <summary>
+    /// Whether there is a move to take back, and so whether the button is drawn. Unaffected
+    /// by a stack being held: a press mid-drag belongs to the drag and never reaches the
+    /// button anyway, and blinking the button out for the duration is both a flicker and a
+    /// repaint of a corner of the board that had no reason to change.
+    /// </summary>
+    public bool CanUndo => Board.CanUndo && !fastForward.IsRunning;
+
+    /// <summary>
+    /// Whether the end-of-game panel is up. A won game holds it back until the cards have
+    /// finished falling: the celebration is the reward, and putting a dialog over it the
+    /// instant it starts is asking the player what they want next before they have seen what
+    /// they got.
+    /// </summary>
+    public bool ShowBanner => State != GameState.Playing && !cascade.IsRunning;
 
     /// <summary>The pile the pointer is resting on and could pick up from, or null. Hidden
     /// while the board is playing itself out — nothing there is grabbable.</summary>
@@ -107,7 +147,15 @@ public class Solitaire
         Board.ClearDirty();
     }
 
-    public void Resize(double width, double height) => Guarded(() => Layout.Resize(width, height));
+    public void Resize(double width, double height) => Guarded(() =>
+    {
+        Layout.Resize(width, height);
+
+        // Every flight was aimed at a slot that has just moved. They are half a second long
+        // at most, so there is nothing worth re-aiming — the board simply catches up.
+        animator.Clear();
+        cascade.Stop();
+    });
 
     /// <summary>
     /// Called once per animation frame, before the drawer runs. This is where the fast-forward
@@ -120,12 +168,43 @@ public class Solitaire
         Elapsed = elapsed;
         AdvanceFastForward();
 
+        // Anything the board did — this frame or since the last one — goes into the air
+        // before it is moved on, so a move made a moment ago is already travelling by the
+        // time this frame is drawn.
+        animator.Capture(elapsed.TotalMilliseconds);
+
+        if (animator.Tick(elapsed.TotalMilliseconds))
+        {
+            NeedsRedraw = true;
+        }
+
+        Celebrate();
+
         if (scores.Update())
         {
             NeedsRedraw = true;
         }
 
-        if (analyzer.Update(paused: Drag != null || fastForward.IsRunning))
+        if (analyzer.Update(paused: Drag != null || fastForward.IsRunning || animator.Busy || cascade.IsRunning))
+        {
+            NeedsRedraw = true;
+        }
+    }
+
+    /// <summary>
+    /// Throws the foundations down the board once, on the frame a deal is won, and moves
+    /// them on for as long as they are falling. Keyed to the deal rather than to the state,
+    /// because a won board goes on reporting that it is won for as long as it is on screen.
+    /// </summary>
+    private void Celebrate()
+    {
+        if (State == GameState.Won && celebratedDeal != Board.DealId && !animator.Busy)
+        {
+            celebratedDeal = Board.DealId;
+            cascade.Start();
+        }
+
+        if (cascade.Tick())
         {
             NeedsRedraw = true;
         }
@@ -158,10 +237,41 @@ public class Solitaire
         }
     }
 
-    public void OnPointerDown(double x, double y) =>
-        Guarded(() => Do(controls.Down(x, y, CanFastForward)));
+    /// <param name="touch">True for a finger or a pen rather than a mouse.</param>
+    public void OnPointerDown(double x, double y, bool touch = false) => Guarded(() =>
+    {
+        // A press during the celebration is asking for it to stop, and nothing else. The
+        // press is swallowed so it does not also land on the board it uncovers.
+        if (cascade.IsRunning)
+        {
+            cascade.Stop();
+            controls.Consume();
+            return;
+        }
 
-    public void OnPointerUp(double x, double y) => Guarded(() => controls.Up(x, y));
+        Do(controls.Down(x, y, touch, CanFastForward, CanUndo));
+    });
+
+    public void OnPointerUp(double x, double y) => Guarded(() =>
+    {
+        // Read where the cards are before letting go of them. A drop is a move like any
+        // other by the time the board sees it, and the board says only which pile it left —
+        // so animating it would start the stack back at that pile, and the player would
+        // watch what they just dragged across the board jump home and fly out again.
+        if (Drag is { } held)
+        {
+            animator.ReleaseAt(
+                held.From,
+                held.Index,
+                new Rect(
+                    held.X - held.OffsetX,
+                    held.Y - held.OffsetY,
+                    Layout.CardWidth,
+                    Layout.CardHeight));
+        }
+
+        controls.Up(x, y);
+    });
 
     public void OnPointerCancel() => Guarded(controls.Cancel);
 
@@ -210,6 +320,17 @@ public class Solitaire
                 ShowStats = !ShowStats;
                 break;
 
+            case PlayerCommand.Undo:
+                if (CanUndo)
+                {
+                    // Whatever was in the air was on its way somewhere that is no longer
+                    // true. Undo is the one move that is better shown instantly.
+                    animator.Clear();
+                    Board.Undo();
+                }
+
+                break;
+
             case PlayerCommand.NewGame:
                 Reset();
                 break;
@@ -223,6 +344,8 @@ public class Solitaire
     public void Reset()
     {
         fastForward.Stop();
+        cascade.Stop();
+        animator.Clear();
         Guarded(Board.Reset);
     }
 

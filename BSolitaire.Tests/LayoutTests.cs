@@ -92,11 +92,115 @@ public class LayoutTests
     public void AFannedColumnLeavesEveryCardShowing(double width, double height)
     {
         // A card underneath has to keep a strip of itself visible, or it stops being
-        // grabbable — especially with a fingertip.
+        // grabbable — especially with a fingertip. A compact board fans wider: it is short
+        // of width and long on height, so the spare room goes into the strip.
         var layout = new BoardLayout(width, height);
 
         Assert.True(layout.FanOffset >= layout.CardHeight * 0.12);
-        Assert.True(layout.FanOffset <= layout.CardHeight * 0.28);
+        Assert.True(layout.FanOffset <= layout.CardHeight * 0.5 + 0.001);
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void TheUndoButtonNeverSitsOnACard(double width, double height)
+    {
+        // Same rule as the mute toggle beside it: it takes the press before the felt does,
+        // so anything underneath it could not be picked up at all.
+        var board = new Board();
+        var layout = new BoardLayout(width, height);
+
+        foreach (var (x, y) in Corners(layout.UndoButton))
+        {
+            Assert.False(layout.TryHitTest(board, x, y, out _, out int index) && index >= 0,
+                $"the undo button covers a card at {width}x{height}");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void TheTwoCornerButtonsDoNotOverlap(double width, double height)
+    {
+        var layout = new BoardLayout(width, height);
+        var undo = layout.UndoButton;
+        var mute = layout.MuteButton;
+
+        Assert.True(undo.X + undo.W <= mute.X + 0.001, $"undo runs into mute at {width}x{height}");
+        Assert.True(undo.X >= 0, $"undo runs off the left at {width}x{height}");
+    }
+
+    [Fact]
+    public void APhoneGetsABiggerCardThanTheDesktopSpacingWouldAllow()
+    {
+        // The whole of the mobile card-size problem in one assertion: seven columns and
+        // their gutters have to fit across the window, so on a phone the gutters are what
+        // the card is competing with.
+        var phone = new BoardLayout(390, 844);
+
+        Assert.True(phone.Compact);
+        Assert.True(phone.CardWidth > 390 / (7 + 8 * 0.14),
+            $"a compact board is no roomier than a desktop one: {phone.CardWidth:F1}px");
+    }
+
+    [Fact]
+    public void AWindowGetsTheDesktopLayout()
+    {
+        Assert.False(new BoardLayout(1280, 800).Compact);
+        Assert.False(new BoardLayout(834, 1112).Compact);
+    }
+
+    [Fact]
+    public void AWiderWindowNeverMeansASmallerCard()
+    {
+        // The bug this is here for: a phone board spends almost nothing on gutters and a
+        // desktop board spends an eighth of its width on them, so switching between the two
+        // at a threshold made the card jump *down* nine per cent as the window got wider.
+        // Dragging a window wider must never take card away.
+        var layout = new BoardLayout(200, 900);
+        double previous = layout.CardWidth;
+
+        for (double width = 210; width <= 1600; width += 5)
+        {
+            layout.Resize(width, 900);
+
+            Assert.True(layout.CardWidth >= previous - 0.001,
+                $"widening to {width} shrank the card from {previous:F2} to {layout.CardWidth:F2}");
+
+            previous = layout.CardWidth;
+        }
+    }
+
+    [Fact]
+    public void TheFanNeverJumpsAsAWindowIsResized()
+    {
+        // Same argument, about the other thing that used to switch at a threshold. A step
+        // here is a board that visibly reflows in the middle of a drag.
+        var layout = new BoardLayout(300, 900);
+        double previous = layout.FanOffset;
+
+        for (double width = 305; width <= 1600; width += 5)
+        {
+            layout.Resize(width, 900);
+
+            Assert.True(Math.Abs(layout.FanOffset - previous) < layout.CardHeight * 0.05,
+                $"the fan jumped from {previous:F2} to {layout.FanOffset:F2} at width {width}");
+
+            previous = layout.FanOffset;
+        }
+    }
+
+    [Fact]
+    public void ASmallCardGetsTheSmallCardFaceWhereverItCameFrom()
+    {
+        // The face follows the card, not the viewport. A desktop window dragged narrow has
+        // exactly the same problem a phone does, and used to get the opposite answer.
+        Assert.True(new BoardLayout(390, 844).SmallCards);
+        Assert.True(new BoardLayout(320, 480).SmallCards);
+        Assert.False(new BoardLayout(1280, 800).SmallCards);
+        Assert.False(new BoardLayout(834, 1112).SmallCards);
+
+        // ...and it is genuinely a question about the card.
+        var layout = new BoardLayout(1280, 800);
+        Assert.Equal(layout.CardWidth < 64, layout.SmallCards);
     }
 
     [Theory]
@@ -182,6 +286,58 @@ public class LayoutTests
             out var loc, out int index));
         Assert.Equal(Tableau(4), loc);
         Assert.Equal(-1, index); // nothing there to pick up
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void APileRegionCoversEveryCardInIt(double width, double height)
+    {
+        // The region is the strip of board that gets cleared before a pile is drawn again.
+        // Anything the pile put on screen that falls outside it survives the repaint — which
+        // is how a drop-target ring left a pair of gold lines down the felt.
+        var board = new Board();
+        var layout = new BoardLayout(width, height);
+
+        foreach (var kind in Board.AllKinds)
+        {
+            for (int pileIndex = 0; pileIndex < board.PileCountOf(kind); pileIndex++)
+            {
+                var loc = new Location(kind, pileIndex);
+                var region = layout.PileRegion(loc);
+                var pile = board.Pile(loc);
+
+                for (int card = 0; card < Math.Max(1, pile.Count); card++)
+                {
+                    var rect = layout.CardRect(loc, card);
+
+                    Assert.True(rect.X >= region.X, $"{kind} {pileIndex} card {card} juts out to the left");
+                    Assert.True(rect.Y >= region.Y, $"{kind} {pileIndex} card {card} juts out above");
+                    Assert.True(rect.X + rect.W <= region.X + region.W + 0.001,
+                        $"{kind} {pileIndex} card {card} juts out to the right");
+                    Assert.True(rect.Y + rect.H <= region.Y + region.H + 0.001,
+                        $"{kind} {pileIndex} card {card} juts out below");
+                }
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void ATableauRegionNeverReachesItsNeighbour(double width, double height)
+    {
+        // The other half of the same rule. The region reaches a little past the slot so that
+        // a card's edge is cleared with it — but a region that reached the next column would
+        // clear part of a pile nobody is about to draw again, and take a bite out of it.
+        var layout = new BoardLayout(width, height);
+
+        for (int column = 0; column + 1 < 7; column++)
+        {
+            var left = layout.PileRegion(Tableau(column));
+            var right = layout.PileRegion(Tableau(column + 1));
+
+            Assert.True(left.X + left.W <= right.X + 0.001,
+                $"columns {column} and {column + 1} share board at {width}x{height}");
+        }
     }
 
     private static IEnumerable<(double X, double Y)> Corners(Rect rect)
