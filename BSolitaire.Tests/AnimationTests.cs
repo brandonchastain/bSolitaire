@@ -15,14 +15,6 @@ public class AnimationTests
     private const double Width = 1200;
     private const double Height = 800;
 
-    private static (Board Board, BoardLayout Layout, Animator Animator) Table()
-    {
-        var board = Empty();
-        board.ClearMotions();
-        var layout = new BoardLayout(Width, Height);
-        return (board, layout, new Animator(board, layout));
-    }
-
     [Fact]
     public void AMoveIsReportedAsACardTravelling()
     {
@@ -225,35 +217,6 @@ public class AnimationTests
         Assert.True(far > near, $"a move across the board ({far}ms) is no slower than one next door ({near}ms)");
     }
 
-    /// <summary>How long a nine takes to reach a ten in the given column, from column 0.</summary>
-    private static double TimeToMove(Location destination)
-    {
-        var (board, _, animator) = Table();
-        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
-        board.Position.Place(destination, Up(Suit.Spades, Rank.Ten));
-
-        Assert.True(board.MakeMove(new Move(Tableau(0), destination, 1)));
-        animator.Capture(0);
-
-        return Settled(animator);
-    }
-
-    /// <summary>How long until nothing is moving, to the nearest millisecond.</summary>
-    private static double Settled(Animator animator)
-    {
-        for (double t = 1; t < 2000; t++)
-        {
-            animator.Tick(t);
-
-            if (!animator.Busy)
-            {
-                return t;
-            }
-        }
-
-        return 2000;
-    }
-
     [Fact]
     public void ClearingLandsEverythingImmediately()
     {
@@ -363,5 +326,42 @@ public class AnimationTests
         // A press cuts it short, and then the board asks what the player wants next.
         game.OnPointerDown(Width / 2, Height / 2);
         Assert.True(game.ShowBanner);
+    }
+
+    private static (Board Board, BoardLayout Layout, Animator Animator) Table()
+    {
+        var board = Empty();
+        board.ClearMotions();
+        var layout = new BoardLayout(Width, Height);
+        return (board, layout, new Animator(board, layout));
+    }
+
+    /// <summary>How long a nine takes to reach a ten in the given column, from column 0.</summary>
+    private static double TimeToMove(Location destination)
+    {
+        var (board, _, animator) = Table();
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(destination, Up(Suit.Spades, Rank.Ten));
+
+        Assert.True(board.MakeMove(new Move(Tableau(0), destination, 1)));
+        animator.Capture(0);
+
+        return Settled(animator);
+    }
+
+    /// <summary>How long until nothing is moving, to the nearest millisecond.</summary>
+    private static double Settled(Animator animator)
+    {
+        for (double t = 1; t < 2000; t++)
+        {
+            animator.Tick(t);
+
+            if (!animator.Busy)
+            {
+                return t;
+            }
+        }
+
+        return 2000;
     }
 }

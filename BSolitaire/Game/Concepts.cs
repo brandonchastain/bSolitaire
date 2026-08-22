@@ -1,9 +1,5 @@
 namespace BSolitaire.Game;
 
-public readonly record struct Location(PileKind Kind, int PileIndex);
-
-public readonly record struct Move(Location From, Location To, int Count);
-
 /// <summary>Where a game has got to. Anything other than <see cref="Playing"/> is over.</summary>
 public enum GameState
 {
@@ -57,3 +53,7 @@ public enum Rank
     Queen,
     King
 }
+
+public readonly record struct Location(PileKind Kind, int PileIndex);
+
+public readonly record struct Move(Location From, Location To, int Count);

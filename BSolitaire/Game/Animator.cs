@@ -55,27 +55,6 @@ public sealed class Animator
     /// </summary>
     private const int DealThreshold = 8;
 
-    private sealed class Flight
-    {
-        public required MotionKind Kind { get; init; }
-
-        public required Card Card { get; init; }
-
-        public required Rect From { get; init; }
-
-        public required Rect To { get; init; }
-
-        public required Location Dest { get; init; }
-
-        public required int DestIndex { get; init; }
-
-        public required double StartMs { get; init; }
-
-        public required double EndMs { get; init; }
-
-        public required bool Reveals { get; init; }
-    }
-
     private readonly Board board;
     private readonly BoardLayout layout;
 
@@ -180,28 +159,6 @@ public sealed class Animator
     }
 
     /// <summary>
-    /// Where a card starts from. Its slot in the pile it left, unless the player was holding
-    /// it — in which case it starts under their hand, which is where they can see it is.
-    /// </summary>
-    private Rect Origin(Motion motion)
-    {
-        if (motion.Kind != MotionKind.Move ||
-            releaseFrom != motion.From ||
-            motion.FromIndex < releaseIndex)
-        {
-            return layout.CardRect(motion.From, motion.FromIndex);
-        }
-
-        // A held run is fanned under the pointer exactly as it was in its pile, so each card
-        // of it starts that much further down than the one the player actually grabbed.
-        return new Rect(
-            releaseRect.X,
-            releaseRect.Y + (motion.FromIndex - releaseIndex) * layout.FanOffset,
-            layout.CardWidth,
-            layout.CardHeight);
-    }
-
-    /// <summary>
     /// Moves everything on a frame and retires whatever has arrived. Returns true when the
     /// picture changed, which is whenever anything is in the air at all.
     /// </summary>
@@ -242,6 +199,38 @@ public sealed class Animator
         inFlight.Clear();
         hidden.Clear();
         board.ClearMotions();
+    }
+
+    /// <summary>
+    /// Ease-out: quick away, gentle on arrival. A card that decelerates into its slot looks
+    /// placed; one moving at a constant speed looks dragged by a machine.
+    /// </summary>
+    private static double Ease(double t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        double inverse = 1 - t;
+        return 1 - inverse * inverse * inverse;
+    }
+    /// <summary>
+    /// Where a card starts from. Its slot in the pile it left, unless the player was holding
+    /// it — in which case it starts under their hand, which is where they can see it is.
+    /// </summary>
+    private Rect Origin(Motion motion)
+    {
+        if (motion.Kind != MotionKind.Move ||
+            releaseFrom != motion.From ||
+            motion.FromIndex < releaseIndex)
+        {
+            return layout.CardRect(motion.From, motion.FromIndex);
+        }
+
+        // A held run is fanned under the pointer exactly as it was in its pile, so each card
+        // of it starts that much further down than the one the player actually grabbed.
+        return new Rect(
+            releaseRect.X,
+            releaseRect.Y + (motion.FromIndex - releaseIndex) * layout.FanOffset,
+            layout.CardWidth,
+            layout.CardHeight);
     }
 
     /// <summary>
@@ -317,14 +306,25 @@ public sealed class Animator
             FaceUp: t >= 0.5);
     }
 
-    /// <summary>
-    /// Ease-out: quick away, gentle on arrival. A card that decelerates into its slot looks
-    /// placed; one moving at a constant speed looks dragged by a machine.
-    /// </summary>
-    private static double Ease(double t)
+
+    private sealed class Flight
     {
-        t = Math.Clamp(t, 0, 1);
-        double inverse = 1 - t;
-        return 1 - inverse * inverse * inverse;
+        public required MotionKind Kind { get; init; }
+
+        public required Card Card { get; init; }
+
+        public required Rect From { get; init; }
+
+        public required Rect To { get; init; }
+
+        public required Location Dest { get; init; }
+
+        public required int DestIndex { get; init; }
+
+        public required double StartMs { get; init; }
+
+        public required double EndMs { get; init; }
+
+        public required bool Reveals { get; init; }
     }
 }

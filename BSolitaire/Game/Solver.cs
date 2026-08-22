@@ -60,6 +60,11 @@ public readonly record struct SolverBudget(int States, int Nodes)
 /// </summary>
 public sealed class Solver
 {
+    /// <summary>How often the clock is read, in positions. Reading it per position is
+    /// itself measurable at these speeds; a few hundred is far finer than any deadline
+    /// worth setting and costs nothing.</summary>
+    private const int ClockInterval = 256;
+
     private const int Suits = 4;
     private const int Piles = 7;
 
@@ -116,11 +121,6 @@ public sealed class Solver
     public int States => seen.Count;
 
     public bool Done => Result != SolveResult.Searching;
-
-    /// <summary>How often the clock is read, in positions. Reading it per position is
-    /// itself measurable at these speeds; a few hundred is far finer than any deadline
-    /// worth setting and costs nothing.</summary>
-    private const int ClockInterval = 256;
 
     /// <summary>
     /// Examines up to <paramref name="slice"/> more positions. Returns true once the search
@@ -200,24 +200,6 @@ public sealed class Solver
         }
 
         return false;
-    }
-
-    /// <summary>Pushes the position's children onto the search stack, reusing a spent frame.</summary>
-    private void Expand(in Position position)
-    {
-        Frame frame;
-        if (spare.Count > 0)
-        {
-            frame = spare.Pop();
-            frame.Reset();
-        }
-        else
-        {
-            frame = new Frame();
-        }
-
-        Successors(position, autoplay, frame.Children);
-        stack.Push(frame);
     }
 
     /// <summary>
@@ -397,6 +379,260 @@ public sealed class Solver
 
     private static bool IsRed(int suit) => suit == (int)Suit.Diamonds || suit == (int)Suit.Hearts;
 
+    /// <summary>Pushes the position's children onto the search stack, reusing a spent frame.</summary>
+    private void Expand(in Position position)
+    {
+        Frame frame;
+        if (spare.Count > 0)
+        {
+            frame = spare.Pop();
+            frame.Reset();
+        }
+        else
+        {
+            frame = new Frame();
+        }
+
+        Successors(position, autoplay, frame.Children);
+        stack.Push(frame);
+    }
+    /// <summary>
+    /// A board, stripped to what the search needs, in one flat array.
+    ///
+    /// The stock and waste collapse into a single unordered set: the game deals one card at a
+    /// time and recycles without limit, so every card down there can be brought to the top
+    /// without disturbing anything else, which makes their order carry no information.
+    ///
+    /// One array rather than a jagged one because a position is cloned for every child
+    /// generated — millions of times — and eight allocations per clone is eight times the work
+    /// for the allocator and the collector.
+    ///
+    /// A struct over an inline buffer rather than a class over a byte[] for the same reason
+    /// carried one step further: a class costs a heap object and an array per child, which
+    /// measured at ~300 bytes of garbage per position examined. Inline, a child is a register
+    /// copy into space the caller already owns and the collector never hears about it — which
+    /// matters far more on the browser's collector than on the desktop one.
+    /// </summary>
+    private struct Position
+    {
+        /// <summary>Cards still in the stock or waste.</summary>
+        public ulong Deck;
+
+        private const int Size = FoundationAt + Suits;
+
+        private const int FoundationAt = DownAt + Piles;
+        private const int DownAt = LengthAt + Piles;
+        private const int LengthAt = Piles * PileCap;
+        private Body data;
+
+        public readonly bool IsWon =>
+            Foundation(0) == 13 && Foundation(1) == 13 && Foundation(2) == 13 && Foundation(3) == 13;
+
+        public static Position From(Board board)
+        {
+            var p = new Position();
+
+            for (int i = 0; i < Piles; i++)
+            {
+                var pile = board.TableauPiles[i];
+                p.data[LengthAt + i] = (byte)pile.Count;
+
+                for (int j = 0; j < pile.Count; j++)
+                {
+                    p.data[i * PileCap + j] = Encode(pile[j]);
+                    if (!pile[j].IsFaceUp)
+                    {
+                        p.data[DownAt + i] = (byte)(j + 1);
+                    }
+                }
+            }
+
+            foreach (var pile in board.FoundationPiles)
+            {
+                if (pile.Count > 0)
+                {
+                    p.data[FoundationAt + (int)pile[^1].Suit] = (byte)(int)pile[^1].Rank;
+                }
+            }
+
+            foreach (var card in board.FaceDownPile)
+            {
+                p.Deck |= 1UL << Encode(card);
+            }
+
+            foreach (var card in board.FaceUpPile)
+            {
+                p.Deck |= 1UL << Encode(card);
+            }
+
+            return p;
+        }
+
+        public readonly bool InDeck(int card) => (Deck & (1UL << card)) != 0;
+
+        public readonly bool CanFound(byte card) => Foundation(SuitOf(card)) == RankOf(card) - 1;
+
+        public readonly Position MoveToFoundation(int pile)
+        {
+            var c = Clone();
+            byte card = Top(pile);
+            c.data[FoundationAt + SuitOf(card)] = (byte)RankOf(card);
+            c.data[LengthAt + pile]--;
+            c.Reveal(pile);
+            return c;
+        }
+
+        public readonly int Length(int pile) => data[LengthAt + pile];
+
+        public readonly int Down(int pile) => data[DownAt + pile];
+
+        public readonly int Foundation(int suit) => data[FoundationAt + suit];
+
+        public readonly byte CardAt(int pile, int index) => data[pile * PileCap + index];
+
+        public readonly byte Top(int pile) => data[pile * PileCap + Length(pile) - 1];
+
+        public readonly Position DeckToFoundation(byte card)
+        {
+            var c = Clone();
+            c.data[FoundationAt + SuitOf(card)] = (byte)RankOf(card);
+            c.Deck &= ~(1UL << card);
+            return c;
+        }
+
+        public readonly Position DeckToPile(byte card, int pile)
+        {
+            var c = Clone();
+            c.data[pile * PileCap + c.Length(pile)] = card;
+            c.data[LengthAt + pile]++;
+            c.Deck &= ~(1UL << card);
+            return c;
+        }
+
+        public readonly Position FoundationToPile(int suit, int pile)
+        {
+            var c = Clone();
+            byte card = MakeCard(suit, c.Foundation(suit));
+            c.data[FoundationAt + suit]--;
+            c.data[pile * PileCap + c.Length(pile)] = card;
+            c.data[LengthAt + pile]++;
+            return c;
+        }
+
+        public readonly Position MoveRun(int from, int at, int to)
+        {
+            var c = Clone();
+            int count = Length(from) - at;
+            int target = Length(to);
+
+            for (int i = 0; i < count; i++)
+            {
+                c.data[to * PileCap + target + i] = data[from * PileCap + at + i];
+            }
+
+            c.data[LengthAt + to] = (byte)(target + count);
+            c.data[LengthAt + from] = (byte)at;
+            c.Reveal(from);
+            return c;
+        }
+
+        /// <summary>
+        /// A hash that ignores which column is which: the seven columns are interchangeable,
+        /// so two positions that differ only by shuffling them are the same position, and
+        /// treating them as such is a large part of what makes the search finish.
+        /// </summary>
+        public readonly ulong Hash()
+        {
+            Span<ulong> perPile = stackalloc ulong[Piles];
+
+            for (int i = 0; i < Piles; i++)
+            {
+                ulong h = 14695981039346656037UL;
+                Mix(ref h, (byte)Down(i));
+
+                int end = i * PileCap + Length(i);
+                for (int j = i * PileCap; j < end; j++)
+                {
+                    Mix(ref h, data[j]);
+                }
+
+                perPile[i] = h;
+            }
+
+            // Insertion sort: seven items, and it runs on every position examined.
+            for (int i = 1; i < Piles; i++)
+            {
+                ulong v = perPile[i];
+                int j = i - 1;
+                while (j >= 0 && perPile[j] > v)
+                {
+                    perPile[j + 1] = perPile[j];
+                    j--;
+                }
+
+                perPile[j + 1] = v;
+            }
+
+            ulong hash = 14695981039346656037UL;
+            for (int i = 0; i < Piles; i++)
+            {
+                for (int b = 0; b < 8; b++)
+                {
+                    Mix(ref hash, (byte)(perPile[i] >> (b * 8)));
+                }
+            }
+
+            for (int s = 0; s < Suits; s++)
+            {
+                Mix(ref hash, (byte)Foundation(s));
+            }
+
+            for (int b = 0; b < 8; b++)
+            {
+                Mix(ref hash, (byte)(Deck >> (b * 8)));
+            }
+
+            return hash;
+        }
+
+        private static byte Encode(Card card) => (byte)((int)card.Suit * 13 + (int)card.Rank - 1);
+
+        private static void Mix(ref ulong hash, byte value)
+        {
+            hash ^= value;
+            hash *= 1099511628211UL;
+        }
+        /// <summary>A whole position, by value. No heap traffic at all.</summary>
+        private readonly Position Clone() => this;
+
+        /// <summary>
+        /// Turns the newly exposed card face up. Taking the whole face-up run off a pile
+        /// leaves every remaining card face down, and the top of those turns over — which is
+        /// the only way a Klondike position ever gains information, so getting this wrong
+        /// makes every deal look lost.
+        /// </summary>
+        private void Reveal(int pile)
+        {
+            if (Length(pile) == 0)
+            {
+                data[DownAt + pile] = 0;
+            }
+            else if (Down(pile) >= Length(pile))
+            {
+                data[DownAt + pile] = (byte)(Length(pile) - 1);
+            }
+        }
+
+        /// <summary>The fixed-size body: seven pile slots, their lengths and face-down
+        /// counts, then the four foundations. Sized by the constants above.</summary>
+        [System.Runtime.CompilerServices.InlineArray(Size)]
+        private struct Body
+        {
+            private byte first;
+        }
+
+    }
+
     /// <summary>One expanded position and how far its children have been walked.</summary>
     private sealed class Frame
     {
@@ -512,240 +748,4 @@ public sealed class Solver
         }
     }
 
-    /// <summary>
-    /// A board, stripped to what the search needs, in one flat array.
-    ///
-    /// The stock and waste collapse into a single unordered set: the game deals one card at a
-    /// time and recycles without limit, so every card down there can be brought to the top
-    /// without disturbing anything else, which makes their order carry no information.
-    ///
-    /// One array rather than a jagged one because a position is cloned for every child
-    /// generated — millions of times — and eight allocations per clone is eight times the work
-    /// for the allocator and the collector.
-    ///
-    /// A struct over an inline buffer rather than a class over a byte[] for the same reason
-    /// carried one step further: a class costs a heap object and an array per child, which
-    /// measured at ~300 bytes of garbage per position examined. Inline, a child is a register
-    /// copy into space the caller already owns and the collector never hears about it — which
-    /// matters far more on the browser's collector than on the desktop one.
-    /// </summary>
-    private struct Position
-    {
-        private const int LengthAt = Piles * PileCap;
-        private const int DownAt = LengthAt + Piles;
-        private const int FoundationAt = DownAt + Piles;
-        private const int Size = FoundationAt + Suits;
-
-        /// <summary>The fixed-size body: seven pile slots, their lengths and face-down
-        /// counts, then the four foundations. Sized by the constants above.</summary>
-        [System.Runtime.CompilerServices.InlineArray(Size)]
-        private struct Body
-        {
-            private byte first;
-        }
-
-        private Body data;
-
-        /// <summary>Cards still in the stock or waste.</summary>
-        public ulong Deck;
-
-        public static Position From(Board board)
-        {
-            var p = new Position();
-
-            for (int i = 0; i < Piles; i++)
-            {
-                var pile = board.TableauPiles[i];
-                p.data[LengthAt + i] = (byte)pile.Count;
-
-                for (int j = 0; j < pile.Count; j++)
-                {
-                    p.data[i * PileCap + j] = Encode(pile[j]);
-                    if (!pile[j].IsFaceUp)
-                    {
-                        p.data[DownAt + i] = (byte)(j + 1);
-                    }
-                }
-            }
-
-            foreach (var pile in board.FoundationPiles)
-            {
-                if (pile.Count > 0)
-                {
-                    p.data[FoundationAt + (int)pile[^1].Suit] = (byte)(int)pile[^1].Rank;
-                }
-            }
-
-            foreach (var card in board.FaceDownPile)
-            {
-                p.Deck |= 1UL << Encode(card);
-            }
-
-            foreach (var card in board.FaceUpPile)
-            {
-                p.Deck |= 1UL << Encode(card);
-            }
-
-            return p;
-        }
-
-        private static byte Encode(Card card) => (byte)((int)card.Suit * 13 + (int)card.Rank - 1);
-
-        public readonly int Length(int pile) => data[LengthAt + pile];
-
-        public readonly int Down(int pile) => data[DownAt + pile];
-
-        public readonly int Foundation(int suit) => data[FoundationAt + suit];
-
-        public readonly byte CardAt(int pile, int index) => data[pile * PileCap + index];
-
-        public readonly byte Top(int pile) => data[pile * PileCap + Length(pile) - 1];
-
-        public readonly bool IsWon =>
-            Foundation(0) == 13 && Foundation(1) == 13 && Foundation(2) == 13 && Foundation(3) == 13;
-
-        public readonly bool InDeck(int card) => (Deck & (1UL << card)) != 0;
-
-        public readonly bool CanFound(byte card) => Foundation(SuitOf(card)) == RankOf(card) - 1;
-
-        /// <summary>A whole position, by value. No heap traffic at all.</summary>
-        private readonly Position Clone() => this;
-
-        public readonly Position MoveToFoundation(int pile)
-        {
-            var c = Clone();
-            byte card = Top(pile);
-            c.data[FoundationAt + SuitOf(card)] = (byte)RankOf(card);
-            c.data[LengthAt + pile]--;
-            c.Reveal(pile);
-            return c;
-        }
-
-        public readonly Position DeckToFoundation(byte card)
-        {
-            var c = Clone();
-            c.data[FoundationAt + SuitOf(card)] = (byte)RankOf(card);
-            c.Deck &= ~(1UL << card);
-            return c;
-        }
-
-        public readonly Position DeckToPile(byte card, int pile)
-        {
-            var c = Clone();
-            c.data[pile * PileCap + c.Length(pile)] = card;
-            c.data[LengthAt + pile]++;
-            c.Deck &= ~(1UL << card);
-            return c;
-        }
-
-        public readonly Position FoundationToPile(int suit, int pile)
-        {
-            var c = Clone();
-            byte card = MakeCard(suit, c.Foundation(suit));
-            c.data[FoundationAt + suit]--;
-            c.data[pile * PileCap + c.Length(pile)] = card;
-            c.data[LengthAt + pile]++;
-            return c;
-        }
-
-        public readonly Position MoveRun(int from, int at, int to)
-        {
-            var c = Clone();
-            int count = Length(from) - at;
-            int target = Length(to);
-
-            for (int i = 0; i < count; i++)
-            {
-                c.data[to * PileCap + target + i] = data[from * PileCap + at + i];
-            }
-
-            c.data[LengthAt + to] = (byte)(target + count);
-            c.data[LengthAt + from] = (byte)at;
-            c.Reveal(from);
-            return c;
-        }
-
-        /// <summary>
-        /// Turns the newly exposed card face up. Taking the whole face-up run off a pile
-        /// leaves every remaining card face down, and the top of those turns over — which is
-        /// the only way a Klondike position ever gains information, so getting this wrong
-        /// makes every deal look lost.
-        /// </summary>
-        private void Reveal(int pile)
-        {
-            if (Length(pile) == 0)
-            {
-                data[DownAt + pile] = 0;
-            }
-            else if (Down(pile) >= Length(pile))
-            {
-                data[DownAt + pile] = (byte)(Length(pile) - 1);
-            }
-        }
-
-        /// <summary>
-        /// A hash that ignores which column is which: the seven columns are interchangeable,
-        /// so two positions that differ only by shuffling them are the same position, and
-        /// treating them as such is a large part of what makes the search finish.
-        /// </summary>
-        public readonly ulong Hash()
-        {
-            Span<ulong> perPile = stackalloc ulong[Piles];
-
-            for (int i = 0; i < Piles; i++)
-            {
-                ulong h = 14695981039346656037UL;
-                Mix(ref h, (byte)Down(i));
-
-                int end = i * PileCap + Length(i);
-                for (int j = i * PileCap; j < end; j++)
-                {
-                    Mix(ref h, data[j]);
-                }
-
-                perPile[i] = h;
-            }
-
-            // Insertion sort: seven items, and it runs on every position examined.
-            for (int i = 1; i < Piles; i++)
-            {
-                ulong v = perPile[i];
-                int j = i - 1;
-                while (j >= 0 && perPile[j] > v)
-                {
-                    perPile[j + 1] = perPile[j];
-                    j--;
-                }
-
-                perPile[j + 1] = v;
-            }
-
-            ulong hash = 14695981039346656037UL;
-            for (int i = 0; i < Piles; i++)
-            {
-                for (int b = 0; b < 8; b++)
-                {
-                    Mix(ref hash, (byte)(perPile[i] >> (b * 8)));
-                }
-            }
-
-            for (int s = 0; s < Suits; s++)
-            {
-                Mix(ref hash, (byte)Foundation(s));
-            }
-
-            for (int b = 0; b < 8; b++)
-            {
-                Mix(ref hash, (byte)(Deck >> (b * 8)));
-            }
-
-            return hash;
-        }
-
-        private static void Mix(ref ulong hash, byte value)
-        {
-            hash ^= value;
-            hash *= 1099511628211UL;
-        }
-    }
 }

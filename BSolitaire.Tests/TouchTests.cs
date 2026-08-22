@@ -14,15 +14,6 @@ public class TouchTests
     private const double Width = 390;
     private const double Height = 844;
 
-    private static (Board Board, BoardLayout Layout, PointerInput Input) Table()
-    {
-        var board = Empty();
-        var layout = new BoardLayout(Width, Height);
-        return (board, layout, new PointerInput(board, layout));
-    }
-
-    private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
-
     [Fact]
     public void ATouchedStackRidesAboveTheFinger()
     {
@@ -254,4 +245,13 @@ public class TouchTests
         Assert.Empty(board.TableauPiles[0]);
         Assert.Equal(2, board.TableauPiles[1].Count);
     }
+
+    private static (Board Board, BoardLayout Layout, PointerInput Input) Table()
+    {
+        var board = Empty();
+        var layout = new BoardLayout(Width, Height);
+        return (board, layout, new PointerInput(board, layout));
+    }
+
+    private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
 }

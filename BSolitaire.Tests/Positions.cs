@@ -9,6 +9,9 @@ namespace BSolitaire.Tests;
 /// </summary>
 public static class Positions
 {
+    public static Location Stock => new(PileKind.FaceDown, 0);
+
+    public static Location Waste => new(PileKind.FaceUp, 0);
     /// <summary>A face-up card. Cards are dealt face down, so this is the one that has to be said.</summary>
     public static Card Up(Suit suit, Rank rank)
     {
@@ -56,7 +59,4 @@ public static class Positions
 
     public static Location Foundation(int index) => new(PileKind.Foundation, index);
 
-    public static Location Stock => new(PileKind.FaceDown, 0);
-
-    public static Location Waste => new(PileKind.FaceUp, 0);
 }

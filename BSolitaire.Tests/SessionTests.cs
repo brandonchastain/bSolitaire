@@ -11,8 +11,6 @@ namespace BSolitaire.Tests;
 /// </summary>
 public class SessionTests
 {
-    private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
-
     [Fact]
     public void AFreshGameWantsDrawingAndIsPlaying()
     {
@@ -392,4 +390,6 @@ public class SessionTests
         game.MarkClean();
         return game;
     }
+
+    private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
 }

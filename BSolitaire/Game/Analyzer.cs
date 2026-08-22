@@ -9,6 +9,13 @@ namespace BSolitaire.Game;
 public sealed class Analyzer
 {
     /// <summary>
+    /// A ceiling on positions per frame as well, so a machine fast enough to burn the whole
+    /// node budget inside four milliseconds still spreads the work out rather than doing it
+    /// all in one frame.
+    /// </summary>
+    private const int SearchSlice = 8000;
+
+    /// <summary>
     /// How long the search may run inside one frame. This is the number that decides whether
     /// the board feels responsive: everything here shares a thread, so whatever the search
     /// spends is added directly to the frame it runs in. Four milliseconds leaves the rest of
@@ -16,13 +23,6 @@ public sealed class Analyzer
     /// phone as on a desktop — slow hardware takes more frames rather than dropping them.
     /// </summary>
     private static readonly TimeSpan SearchBudget = TimeSpan.FromMilliseconds(4);
-
-    /// <summary>
-    /// A ceiling on positions per frame as well, so a machine fast enough to burn the whole
-    /// node budget inside four milliseconds still spreads the work out rather than doing it
-    /// all in one frame.
-    /// </summary>
-    private const int SearchSlice = 8000;
 
     private readonly Board board;
 

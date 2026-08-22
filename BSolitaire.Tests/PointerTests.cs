@@ -14,42 +14,6 @@ public class PointerTests
     private const double Width = 1200;
     private const double Height = 800;
 
-    private static (Board Board, BoardLayout Layout, PointerInput Input) Table()
-    {
-        var board = Empty();
-        var layout = new BoardLayout(Width, Height);
-        return (board, layout, new PointerInput(board, layout));
-    }
-
-    private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
-
-    /// <summary>
-    /// Where a player would actually press to take this card. A tableau column is fanned, so
-    /// every card but the last is mostly hidden under the next one — the centre of a buried
-    /// card belongs to the card on top of it, on screen and in the hit test alike. The strip
-    /// still showing is the only part of it anyone can point at.
-    /// </summary>
-    private static (double X, double Y) Grab(BoardLayout layout, Location loc, int index)
-    {
-        var rect = layout.CardRect(loc, index);
-        return (rect.X + rect.W / 2, rect.Y + Math.Min(rect.H / 2, layout.FanOffset / 2));
-    }
-
-    /// <summary>A press, a real amount of travel, and a release — the gesture, not the events.</summary>
-    private static void DragCard(PointerInput input, (double X, double Y) from, (double X, double Y) to)
-    {
-        input.Down(from.X, from.Y);
-        input.Move(to.X, to.Y);
-        input.Up(to.X, to.Y);
-    }
-
-    /// <summary>A press and release without travel.</summary>
-    private static void Tap(PointerInput input, (double X, double Y) at)
-    {
-        input.Down(at.X, at.Y);
-        input.Up(at.X, at.Y);
-    }
-
     [Fact]
     public void DraggingACardOntoALegalPileMovesIt()
     {
@@ -401,5 +365,41 @@ public class PointerTests
 
         Assert.Equal(GameState.Playing, board.State);
         Assert.Equal(24, board.FaceDownPile.Count);
+    }
+
+    /// <summary>A press and release without travel.</summary>
+    private static void Tap(PointerInput input, (double X, double Y) at)
+    {
+        input.Down(at.X, at.Y);
+        input.Up(at.X, at.Y);
+    }
+
+    private static (Board Board, BoardLayout Layout, PointerInput Input) Table()
+    {
+        var board = Empty();
+        var layout = new BoardLayout(Width, Height);
+        return (board, layout, new PointerInput(board, layout));
+    }
+
+    private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
+
+    /// <summary>
+    /// Where a player would actually press to take this card. A tableau column is fanned, so
+    /// every card but the last is mostly hidden under the next one — the centre of a buried
+    /// card belongs to the card on top of it, on screen and in the hit test alike. The strip
+    /// still showing is the only part of it anyone can point at.
+    /// </summary>
+    private static (double X, double Y) Grab(BoardLayout layout, Location loc, int index)
+    {
+        var rect = layout.CardRect(loc, index);
+        return (rect.X + rect.W / 2, rect.Y + Math.Min(rect.H / 2, layout.FanOffset / 2));
+    }
+
+    /// <summary>A press, a real amount of travel, and a release — the gesture, not the events.</summary>
+    private static void DragCard(PointerInput input, (double X, double Y) from, (double X, double Y) to)
+    {
+        input.Down(from.X, from.Y);
+        input.Move(to.X, to.Y);
+        input.Up(to.X, to.Y);
     }
 }

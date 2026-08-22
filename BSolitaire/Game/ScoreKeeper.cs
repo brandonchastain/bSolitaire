@@ -13,12 +13,12 @@ public sealed class ScoreKeeper
 
     public ScoreKeeper(Board board) => this.board = board;
 
+    /// <summary>Raised when <see cref="Score"/> has changed and is worth persisting.</summary>
+    public event Action? Changed;
+
     /// <summary>The local player's running record. The host loads it before the first frame
     /// and saves it whenever <see cref="Changed"/> fires — this only counts.</summary>
     public PlayerScore Score { get; } = new();
-
-    /// <summary>Raised when <see cref="Score"/> has changed and is worth persisting.</summary>
-    public event Action? Changed;
 
     /// <summary>Renames the player and reports the change so it gets saved.</summary>
     public void SetNickname(string nickname)

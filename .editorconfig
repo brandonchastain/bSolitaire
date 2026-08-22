@@ -8,3 +8,7 @@ dotnet_diagnostic.SA1201.severity = warning
 dotnet_diagnostic.SA1202.severity = warning
 dotnet_diagnostic.SA1203.severity = warning
 dotnet_diagnostic.SA1204.severity = warning
+
+# The documentation rules are all off, so StyleCop's note that it cannot analyse
+# XML comments (no GenerateDocumentationFile) has nothing to tell us.
+dotnet_diagnostic.SA0001.severity = none

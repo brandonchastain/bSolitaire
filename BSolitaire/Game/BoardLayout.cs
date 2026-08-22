@@ -49,6 +49,13 @@ public sealed class BoardLayout
     /// the bottom. Longer columns exist but are rare enough not to drive the layout.</summary>
     private const int FannedCardsToFit = 13;
 
+    /// <summary>Where a full pip layout stops being worth printing: below this a pip is
+    /// under four and a half pixels across.</summary>
+    private const double SmallCardWidth = 64;
+
+    /// <summary>Piles that can be dropped onto. The stock and waste are never drop targets.</summary>
+    private static readonly PileKind[] DropTargetKinds = [PileKind.Tableau, PileKind.Foundation];
+
     private double gutter;
     private double margin;
     private double originX;
@@ -85,10 +92,6 @@ public sealed class BoardLayout
     /// </summary>
     public bool SmallCards => CardWidth < SmallCardWidth;
 
-    /// <summary>Where a full pip layout stops being worth printing: below this a pip is
-    /// under four and a half pixels across.</summary>
-    private const double SmallCardWidth = 64;
-
     /// <summary>Derived from the viewport — never set directly.</summary>
     public double CardWidth { get; private set; }
 
@@ -123,9 +126,6 @@ public sealed class BoardLayout
     /// them, so the bottom corner is the one part of the board that is reliably empty.
     /// </summary>
     public Rect MuteButton { get; private set; }
-
-    /// <summary>Piles that can be dropped onto. The stock and waste are never drop targets.</summary>
-    private static readonly PileKind[] DropTargetKinds = [PileKind.Tableau, PileKind.Foundation];
 
     /// <summary>
     /// Recomputes every dimension from the viewport. Card size is whatever lets the whole
@@ -207,22 +207,6 @@ public sealed class BoardLayout
         double ffH = CardHeight * 0.42;
         FastForwardButton = new Rect((width - ffW) / 2, height - ffH - gutter * 2, ffW, ffH);
     }
-
-    /// <summary>The phone value or the window value, or wherever between them this board
-    /// sits. Every difference between the two layouts goes through here.</summary>
-    private double Blend(double phone, double window) =>
-        phone + (window - phone) * (1 - Compactness);
-
-    /// <summary>A smooth 0-to-1 ramp between two widths, flat at both ends. Flat matters: a
-    /// linear ramp still changes the layout's mind abruptly at each end of the range.</summary>
-    private static double Smoothstep(double value, double from, double to)
-    {
-        double t = Math.Clamp((value - from) / (to - from), 0, 1);
-        return t * t * (3 - 2 * t);
-    }
-
-    /// <summary>Left edge of one of the seven columns the whole board is built on.</summary>
-    private double ColumnX(int column) => originX + margin + column * (CardWidth + gutter);
 
     public Rect CardRect(Location loc, int indexInPile)
     {
@@ -341,4 +325,20 @@ public sealed class BoardLayout
 
         return false;
     }
+
+    /// <summary>A smooth 0-to-1 ramp between two widths, flat at both ends. Flat matters: a
+    /// linear ramp still changes the layout's mind abruptly at each end of the range.</summary>
+    private static double Smoothstep(double value, double from, double to)
+    {
+        double t = Math.Clamp((value - from) / (to - from), 0, 1);
+        return t * t * (3 - 2 * t);
+    }
+
+    /// <summary>The phone value or the window value, or wherever between them this board
+    /// sits. Every difference between the two layouts goes through here.</summary>
+    private double Blend(double phone, double window) =>
+        phone + (window - phone) * (1 - Compactness);
+
+    /// <summary>Left edge of one of the seven columns the whole board is built on.</summary>
+    private double ColumnX(int column) => originX + margin + column * (CardWidth + gutter);
 }
