@@ -11,7 +11,7 @@ namespace BSolitaire.Game;
 /// things it needs to know — whether the picture is out of date, and whether anything blew up.
 /// It knows nothing about Blazor, canvas, or JS, so it stays unit-testable.
 /// </summary>
-public class Solitaire
+public sealed class Solitaire
 {
     private readonly Controls controls;
     private readonly Analyzer analyzer;
@@ -37,7 +37,7 @@ public class Solitaire
         cascade = new WinCascade(Board, Layout);
     }
 
-    public Board Board { get; }
+    internal Board Board { get; }
 
     public BoardLayout Layout { get; }
 
@@ -53,23 +53,23 @@ public class Solitaire
     }
 
     /// <summary>The stack currently held by the pointer, or null.</summary>
-    public DragState? Drag => controls.Drag;
+    internal DragState? Drag => controls.Drag;
 
     /// <summary>Cards part-way between two piles, to be painted over the board.</summary>
-    public IReadOnlyList<CardInFlight> InFlight => animator.InFlight;
+    internal IReadOnlyList<CardInFlight> InFlight => animator.InFlight;
 
     /// <summary>
     /// The index from which a pile must not be drawn, because the cards above it are still
     /// in the air on their way to it.
     /// </summary>
-    public int HiddenFrom(Location loc) => animator.HiddenFrom(loc);
+    internal int HiddenFrom(Location loc) => animator.HiddenFrom(loc);
 
     /// <summary>Piles that would accept the stack being dragged. Empty unless one is held —
     /// this is the touch answer to a hover, which a finger cannot do.</summary>
-    public IReadOnlyList<Location> DropTargets => controls.DropTargets;
+    internal IReadOnlyList<Location> DropTargets => controls.DropTargets;
 
     /// <summary>Cards bouncing down the board after a win.</summary>
-    public IReadOnlyList<FallingCard> Falling => cascade.Falling;
+    internal IReadOnlyList<FallingCard> Falling => cascade.Falling;
 
     /// <summary>
     /// Whether there is a move to take back, and so whether the button is drawn. Unaffected
@@ -77,7 +77,7 @@ public class Solitaire
     /// button anyway, and blinking the button out for the duration is both a flicker and a
     /// repaint of a corner of the board that had no reason to change.
     /// </summary>
-    public bool CanUndo => Board.CanUndo && !fastForward.IsRunning;
+    internal bool CanUndo => Board.CanUndo && !fastForward.IsRunning;
 
     /// <summary>
     /// Whether the end-of-game panel is up. A won game holds it back until the cards have
@@ -85,21 +85,21 @@ public class Solitaire
     /// instant it starts is asking the player what they want next before they have seen what
     /// they got.
     /// </summary>
-    public bool ShowBanner => State != GameState.Playing && !cascade.IsRunning;
+    internal bool ShowBanner => State != GameState.Playing && !cascade.IsRunning;
 
     /// <summary>The pile the pointer is resting on and could pick up from, or null. Hidden
     /// while the board is playing itself out — nothing there is grabbable.</summary>
-    public Location? HoverPile => fastForward.IsRunning ? null : controls.HoverPile;
+    internal Location? HoverPile => fastForward.IsRunning ? null : controls.HoverPile;
 
     /// <summary>Index of the lowest card the pointer would pick up from
     /// <see cref="HoverPile"/>.</summary>
-    public int HoverIndex => controls.HoverIndex;
+    internal int HoverIndex => controls.HoverIndex;
 
     /// <summary>Whether the game is still going, and if not, how it ended.</summary>
     public GameState State => Board.State;
 
     /// <summary>Last unhandled exception, painted on the board. Null when all is well.</summary>
-    public string? Error { get; private set; }
+    internal string? Error { get; private set; }
 
     /// <summary>
     /// True when the picture is out of date. A solitaire board is static almost all the
@@ -112,13 +112,11 @@ public class Solitaire
     /// Whether the board is offering to play the rest of the game out. False while it is
     /// already doing so — the offer and the act are never both on screen.
     /// </summary>
-    public bool CanFastForward => Board.CanFastForward && !fastForward.IsRunning && Drag == null;
+    internal bool CanFastForward => Board.CanFastForward && !fastForward.IsRunning && Drag == null;
 
-    /// <summary>Whether the draw-time overlay is shown. Toggled with F.</summary>
-    public bool ShowStats { get; private set; }
-
-    /// <summary>Time since the game started. Set by <see cref="Update"/>.</summary>
-    public TimeSpan Elapsed { get; private set; }
+    /// <summary>Whether the draw-time overlay is shown. Toggled with F, and saved with the
+    /// score.</summary>
+    internal bool ShowStats => Score.ShowStats;
 
     /// <summary>
     /// Noises the board has asked for since the host last drained them. Nothing here makes a
@@ -132,13 +130,10 @@ public class Solitaire
     public bool Muted => Score.Muted;
 
     /// <summary>How the search on the current position is going.</summary>
-    public SolveResult Analysis => analyzer.Result;
+    internal SolveResult Analysis => analyzer.Result;
 
     /// <summary>Positions the search has examined on the current board.</summary>
-    public int AnalysisNodes => analyzer.Nodes;
-
-    /// <summary>Distinct positions the search is holding on to.</summary>
-    public int AnalysisStates => analyzer.States;
+    internal int AnalysisNodes => analyzer.Nodes;
 
     /// <summary>Called by the host once the current picture has been drawn.</summary>
     public void MarkClean()
@@ -165,7 +160,6 @@ public class Solitaire
     /// </summary>
     public void Update(TimeSpan elapsed)
     {
-        Elapsed = elapsed;
         AdvanceFastForward();
 
         // Anything the board did — this frame or since the last one — goes into the air
@@ -314,7 +308,7 @@ public class Solitaire
                 break;
 
             case PlayerCommand.ToggleStats:
-                ShowStats = !ShowStats;
+                scores.ToggleStats();
                 break;
 
             case PlayerCommand.Undo:

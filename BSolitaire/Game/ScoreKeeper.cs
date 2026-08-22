@@ -35,6 +35,14 @@ public sealed class ScoreKeeper
         Changed?.Invoke();
     }
 
+    /// <summary>Shows the draw-time overlay, or puts it away. Saved with the record for the
+    /// same reason as the mute.</summary>
+    public void ToggleStats()
+    {
+        Score.ShowStats = !Score.ShowStats;
+        Changed?.Invoke();
+    }
+
     /// <summary>
     /// Counts a deal once it is over — won, stuck, or proved lost — and once only, reporting
     /// whether anything was counted. Keyed to the board's version rather than to a flag this

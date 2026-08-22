@@ -92,8 +92,8 @@ public class BoardTests
     public void AnIllegalMoveChangesNothingAndSaysSo()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Diamonds, Rank.Ten)); // same colour
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
+        board.Mutable(Tableau(1)).Add(Up(Suit.Diamonds, Rank.Ten)); // same colour
 
         Assert.False(board.MakeMove(new Move(Tableau(0), Tableau(1), 1)));
         Assert.Single(board.TableauPiles[0]);
@@ -105,9 +105,9 @@ public class BoardTests
     public void UncoveringATableauCardTurnsItOver()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Down(Suit.Clubs, Rank.Four));
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Mutable(Tableau(0)).Add(Down(Suit.Clubs, Rank.Four));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
+        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Ten));
 
         Assert.True(board.MakeMove(new Move(Tableau(0), Tableau(1), 1)));
         Assert.True(board.TableauPiles[0][^1].IsFaceUp);
@@ -120,11 +120,11 @@ public class BoardTests
         // Two face-down cards under the run. Lifting it exposes the upper one and no more —
         // the one below it is still covered and stays hidden.
         var board = Empty();
-        board.TableauPiles[0].Add(Down(Suit.Clubs, Rank.Four));
-        board.TableauPiles[0].Add(Down(Suit.Clubs, Rank.Three));
-        board.TableauPiles[0].Add(Up(Suit.Spades, Rank.Ten));
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Diamonds, Rank.Jack));
+        board.Mutable(Tableau(0)).Add(Down(Suit.Clubs, Rank.Four));
+        board.Mutable(Tableau(0)).Add(Down(Suit.Clubs, Rank.Three));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Spades, Rank.Ten));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
+        board.Mutable(Tableau(1)).Add(Up(Suit.Diamonds, Rank.Jack));
 
         Assert.True(board.MakeMove(new Move(Tableau(0), Tableau(1), 2)));
         Assert.Equal(2, board.TableauPiles[0].Count);
@@ -147,7 +147,7 @@ public class BoardTests
     public void AnAceSettlesForAnyEmptyFoundation()
     {
         var board = Empty();
-        board.FoundationPiles[(int)Suit.Hearts].Add(Up(Suit.Spades, Rank.Ace));
+        board.Mutable(Foundation((int)Suit.Hearts)).Add(Up(Suit.Spades, Rank.Ace));
 
         var home = board.FoundationFor(Up(Suit.Hearts, Rank.Ace));
 
@@ -167,7 +167,7 @@ public class BoardTests
     public void AMoveBumpsTheVersionAndAnIllegalOneDoesNot()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Ace));
         int before = board.Version;
 
         Assert.False(board.MakeMove(new Move(Tableau(0), Tableau(1), 1))); // an ace is not a king
@@ -196,9 +196,9 @@ public class BoardTests
     public void APositionWithNothingLeftToDoIsStuck()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.King));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Queen));
-        board.TableauPiles[2].Add(Up(Suit.Hearts, Rank.Two));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.King));
+        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Queen));
+        board.Mutable(Tableau(2)).Add(Up(Suit.Hearts, Rank.Two));
 
         // Any move at all, to make the board work out where it stands.
         board.MakeMove(new Move(Tableau(1), Tableau(0), 1));
@@ -244,8 +244,8 @@ public class BoardTests
     {
         // Nothing on the tableau to play, and the card that can go home is under the stock.
         var board = Empty();
-        board.FaceDownPile.Add(Down(Suit.Hearts, Rank.Ace));
-        board.TableauPiles[0].Add(Up(Suit.Spades, Rank.King));
+        board.Mutable(Stock).Add(Down(Suit.Hearts, Rank.Ace));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Spades, Rank.King));
 
         Assert.True(board.FastForwardStep());
         Assert.Single(board.FaceUpPile);
@@ -269,7 +269,7 @@ public class BoardTests
     public void AMoveMarksBothPilesForRedraw()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Ace));
         board.ClearDirty();
 
         board.MakeMove(new Move(Tableau(0), Foundation(0), 1));
@@ -278,7 +278,7 @@ public class BoardTests
         Assert.Contains(Foundation(0), board.DirtyPiles);
     }
 
-    private static IEnumerable<List<Card>> AllPiles(Board board)
+    private static IEnumerable<IReadOnlyList<Card>> AllPiles(Board board)
     {
         yield return board.FaceDownPile;
         yield return board.FaceUpPile;

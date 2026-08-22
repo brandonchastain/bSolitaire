@@ -61,8 +61,8 @@ public class RulesTests
     {
         // The nine would stack on the ten perfectly well — it is face down that stops it.
         var board = Empty();
-        board.TableauPiles[0].Add(Down(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Mutable(Tableau(0)).Add(Down(Suit.Hearts, Rank.Nine));
+        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Ten));
 
         Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Tableau(1), 1)));
     }
@@ -72,9 +72,9 @@ public class RulesTests
     {
         // What a tap used to select: a buried card and everything sitting on top of it.
         var board = Empty();
-        board.TableauPiles[0].Add(Down(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[0].Add(Up(Suit.Clubs, Rank.Three));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Mutable(Tableau(0)).Add(Down(Suit.Hearts, Rank.Nine));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Clubs, Rank.Three));
+        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Ten));
 
         Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Tableau(1), 2)));
     }
@@ -84,7 +84,7 @@ public class RulesTests
     {
         // The one move that carries a face-down card, since turning it over is its purpose.
         var board = Empty();
-        board.FaceDownPile.Add(Down(Suit.Hearts, Rank.Nine));
+        board.Mutable(Stock).Add(Down(Suit.Hearts, Rank.Nine));
 
         Assert.True(Rules.IsLegal(board, new Move(Stock, Waste, 1)));
     }
@@ -94,8 +94,8 @@ public class RulesTests
     {
         // Without this a whole run slides home whenever its last card happens to fit.
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Two));
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Two));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Ace));
 
         Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Foundation(0), 2)));
         Assert.True(Rules.IsLegal(board, new Move(Tableau(0), Foundation(0), 1)));
@@ -105,7 +105,7 @@ public class RulesTests
     public void ACardAlreadyHomeDoesNotSlideToAnotherFoundation()
     {
         var board = Empty();
-        board.FoundationPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
+        board.Mutable(Foundation(0)).Add(Up(Suit.Hearts, Rank.Ace));
 
         Assert.False(Rules.IsLegal(board, new Move(Foundation(0), Foundation(1), 1)));
     }
@@ -114,7 +114,7 @@ public class RulesTests
     public void NothingMovesToTheStock()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
 
         Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Stock, 1)));
     }
@@ -123,7 +123,7 @@ public class RulesTests
     public void OnlyTheStockFeedsTheWaste()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
 
         Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Waste, 1)));
     }
@@ -132,7 +132,7 @@ public class RulesTests
     public void APileDoesNotMoveToItself()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
 
         Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Tableau(0), 1)));
     }
@@ -141,7 +141,7 @@ public class RulesTests
     public void MoreCardsThanThePileHoldsIsNotAMove()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
 
         Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Tableau(1), 2)));
         Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Tableau(1), 0)));
@@ -151,8 +151,8 @@ public class RulesTests
     public void AFaceUpRunCanBeLiftedFromAnyCardInIt()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Spades, Rank.Ten));
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Spades, Rank.Ten));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
 
         Assert.True(Rules.CanLift(board, Tableau(0), 0));
         Assert.True(Rules.CanLift(board, Tableau(0), 1));
@@ -162,8 +162,8 @@ public class RulesTests
     public void ABuriedCardCannotBeLifted()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Down(Suit.Spades, Rank.Ten));
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
+        board.Mutable(Tableau(0)).Add(Down(Suit.Spades, Rank.Ten));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
 
         Assert.False(Rules.CanLift(board, Tableau(0), 0));
         Assert.True(Rules.CanLift(board, Tableau(0), 1));
@@ -173,10 +173,10 @@ public class RulesTests
     public void OnlyTheTopOfTheWasteAndOfAFoundationIsPlayable()
     {
         var board = Empty();
-        board.FaceUpPile.Add(Up(Suit.Spades, Rank.Ten));
-        board.FaceUpPile.Add(Up(Suit.Hearts, Rank.Nine));
-        board.FoundationPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
-        board.FoundationPiles[0].Add(Up(Suit.Hearts, Rank.Two));
+        board.Mutable(Waste).Add(Up(Suit.Spades, Rank.Ten));
+        board.Mutable(Waste).Add(Up(Suit.Hearts, Rank.Nine));
+        board.Mutable(Foundation(0)).Add(Up(Suit.Hearts, Rank.Ace));
+        board.Mutable(Foundation(0)).Add(Up(Suit.Hearts, Rank.Two));
 
         Assert.False(Rules.CanLift(board, Waste, 0));
         Assert.True(Rules.CanLift(board, Waste, 1));
@@ -188,7 +188,7 @@ public class RulesTests
     public void TheStockIsDealtFromRatherThanDragged()
     {
         var board = Empty();
-        board.FaceDownPile.Add(Down(Suit.Hearts, Rank.Nine));
+        board.Mutable(Stock).Add(Down(Suit.Hearts, Rank.Nine));
 
         Assert.False(Rules.CanLift(board, Stock, 0));
     }
@@ -226,8 +226,8 @@ public class RulesTests
     {
         // Two kings, no stock, no waste: every move only swaps which column is empty.
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.King));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.King));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.King));
+        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.King));
 
         Assert.True(Rules.IsStuck(board));
     }
@@ -236,8 +236,8 @@ public class RulesTests
     public void ABoardWithACardStillToPlayIsNotStuck()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.King));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ace));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.King));
+        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Ace));
 
         Assert.False(Rules.IsStuck(board));
     }

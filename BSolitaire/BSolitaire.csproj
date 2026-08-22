@@ -7,6 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The tests arrange positions by hand, which needs the writable pile view that
+         Board keeps internal so the bookkeeping around a move cannot be skipped. -->
+    <InternalsVisibleTo Include="BSolitaire.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="9.0.8" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="9.0.8" PrivateAssets="all" />
     <PackageReference Include="Blazor.Extensions.Canvas" Version="1.1.1" />

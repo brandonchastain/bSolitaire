@@ -253,8 +253,8 @@ public class SessionTests
         var game = Sized();
         var board = game.Board;
         ClearBoard(board);
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.King));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Queen));
+        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.King));
+        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Queen));
         board.MakeMove(new Move(Tableau(1), Tableau(0), 1));
 
         game.Update(TimeSpan.FromMilliseconds(16));
@@ -340,9 +340,9 @@ public class SessionTests
         var board = game.Board;
         ClearBoard(board);
 
-        board.FoundationPiles[0].Add(FaceUp(Suit.Hearts, Rank.Ace));
-        board.TableauPiles[0].Add(FaceUp(Suit.Hearts, Rank.Three));
-        board.TableauPiles[0].Add(FaceUp(Suit.Hearts, Rank.Two));
+        board.Mutable(Foundation(0)).Add(FaceUp(Suit.Hearts, Rank.Ace));
+        board.Mutable(Tableau(0)).Add(FaceUp(Suit.Hearts, Rank.Three));
+        board.Mutable(Tableau(0)).Add(FaceUp(Suit.Hearts, Rank.Two));
 
         var card = game.Layout.CardRect(new Location(PileKind.Tableau, 0), 1);
         double x = card.X + card.W / 2;
@@ -368,18 +368,7 @@ public class SessionTests
 
     private static void ClearBoard(Board board)
     {
-        board.FaceDownPile.Clear();
-        board.FaceUpPile.Clear();
-
-        foreach (var pile in board.FoundationPiles)
-        {
-            pile.Clear();
-        }
-
-        foreach (var pile in board.TableauPiles)
-        {
-            pile.Clear();
-        }
+        ClearAll(board);
     }
 
     /// <summary>Puts the session's own board one move per king from finished.</summary>
@@ -394,10 +383,10 @@ public class SessionTests
 
             for (int rank = (int)Rank.Ace; rank <= (int)Rank.Queen; rank++)
             {
-                board.FoundationPiles[i].Add(Up(suit, (Rank)rank));
+                board.Mutable(Foundation(i)).Add(Up(suit, (Rank)rank));
             }
 
-            board.TableauPiles[i].Add(Up(suit, Rank.King));
+            board.Mutable(Tableau(i)).Add(Up(suit, Rank.King));
         }
 
         // One real move, so the board works out that it is now finishable.

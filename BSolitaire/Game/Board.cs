@@ -20,23 +20,35 @@ public class Board
     {
         for (int i = 0; i < NumFoundationPiles; i++)
         {
-            FoundationPiles[i] = new List<Card>();
+            foundations[i] = new List<Card>();
         }
 
         for (int i = 0; i < NumTableauPiles; i++)
         {
-            TableauPiles[i] = new List<Card>();
+            tableaus[i] = new List<Card>();
         }
 
         Reset();
     }
 
-    public List<Card> FaceDownPile { get; } = new();
-    public List<Card> FaceUpPile { get; } = new();
+    // The piles are held privately and handed out read-only. Moving a card is never only a
+    // splice: see MakeMove for the undo snapshot, motion record, dirty mark, sound, and state
+    // refresh that have to go with it. A caller holding a List<Card> could do the splice and
+    // skip the rest, and nothing would complain — the board would simply be wrong afterwards.
+    private readonly List<Card> faceDown = new();
+    private readonly List<Card> faceUp = new();
+    private readonly List<Card>[] foundations = new List<Card>[NumFoundationPiles];
+    private readonly List<Card>[] tableaus = new List<Card>[NumTableauPiles];
+
+    public IReadOnlyList<Card> FaceDownPile => faceDown;
+    public IReadOnlyList<Card> FaceUpPile => faceUp;
+
     /// <summary>The four foundations. No pile is reserved for a suit — whichever ace lands on a
     /// pile first claims it for the rest of the game.</summary>
-    public List<Card>[] FoundationPiles { get; } = new List<Card>[NumFoundationPiles];
-    public List<Card>[] TableauPiles { get; } = new List<Card>[NumTableauPiles]; // Index 0-6: Tableau piles
+    public IReadOnlyList<IReadOnlyList<Card>> FoundationPiles => foundations;
+
+    /// <summary>The seven tableau piles, left to right.</summary>
+    public IReadOnlyList<IReadOnlyList<Card>> TableauPiles => tableaus;
 
     /// <summary>
     /// Whether the game is still going, and if not, how it ended. Recomputed after every
@@ -197,20 +209,20 @@ public class Board
     public void Reset()
     {
         history.Clear();
-        FaceDownPile.Clear();
-        FaceUpPile.Clear();
+        faceDown.Clear();
+        faceUp.Clear();
 
-        foreach (var pile in FoundationPiles)
+        foreach (var pile in foundations)
         {
             pile.Clear();
         }
 
-        foreach (var pile in TableauPiles)
+        foreach (var pile in tableaus)
         {
             pile.Clear();
         }
 
-        Dealer.Deal(FaceDownPile, TableauPiles);
+        Dealer.Deal(faceDown, tableaus);
         Play(Sound.Deal);
         AnnounceDeal();
         AllDirty = true;
@@ -248,12 +260,19 @@ public class Board
     }
 
     /// <summary>The cards in a pile.</summary>
-    public List<Card> Pile(Location loc) => loc.Kind switch
+    public IReadOnlyList<Card> Pile(Location loc) => Mutable(loc);
+
+    /// <summary>
+    /// The same pile, writable. The board moves cards through here, and tests arrange a
+    /// position with it; nothing outside the assembly can reach it, so the bookkeeping around
+    /// a move cannot be skipped by accident.
+    /// </summary>
+    internal List<Card> Mutable(Location loc) => loc.Kind switch
     {
-        PileKind.FaceDown => FaceDownPile,
-        PileKind.FaceUp => FaceUpPile,
-        PileKind.Foundation => FoundationPiles[loc.PileIndex],
-        PileKind.Tableau => TableauPiles[loc.PileIndex],
+        PileKind.FaceDown => faceDown,
+        PileKind.FaceUp => faceUp,
+        PileKind.Foundation => foundations[loc.PileIndex],
+        PileKind.Tableau => tableaus[loc.PileIndex],
         _ => throw new ArgumentOutOfRangeException(nameof(loc), loc.Kind, null)
     };
 
@@ -362,8 +381,8 @@ public class Board
 
     public bool MakeMove(Move move)
     {
-        var from = Pile(move.From);
-        var to = Pile(move.To);
+        var from = Mutable(move.From);
+        var to = Mutable(move.To);
 
         if (Rules.IsLegal(this, move))
         {
@@ -512,14 +531,14 @@ public class Board
 
         PushUndo();
 
-        for (int i = FaceUpPile.Count - 1; i >= 0; i--)
+        for (int i = faceUp.Count - 1; i >= 0; i--)
         {
-            var card = FaceUpPile[i];
+            var card = faceUp[i];
             card.Flip();
-            FaceDownPile.Add(card);
+            faceDown.Add(card);
         }
 
-        FaceUpPile.Clear();
+        faceUp.Clear();
         Play(Sound.Recycle);
         MarkDirty(new Location(PileKind.FaceDown, 0));
         MarkDirty(new Location(PileKind.FaceUp, 0));
@@ -593,10 +612,10 @@ public class Board
     private List<Card>[] EveryPile()
     {
         var all = new List<Card>[2 + NumFoundationPiles + NumTableauPiles];
-        all[0] = FaceDownPile;
-        all[1] = FaceUpPile;
-        FoundationPiles.CopyTo(all, 2);
-        TableauPiles.CopyTo(all, 2 + NumFoundationPiles);
+        all[0] = faceDown;
+        all[1] = faceUp;
+        foundations.CopyTo(all, 2);
+        tableaus.CopyTo(all, 2 + NumFoundationPiles);
         return all;
     }
 }

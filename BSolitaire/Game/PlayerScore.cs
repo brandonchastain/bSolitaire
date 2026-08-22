@@ -25,6 +25,13 @@ public sealed class PlayerScore
     /// </summary>
     public bool Muted { get; set; }
 
+    /// <summary>
+    /// Whether the draw-time overlay is up. Rides along with <see cref="Muted"/> for the same
+    /// reason: a display preference the player set deliberately, which should still be set the
+    /// next time they open the board.
+    /// </summary>
+    public bool ShowStats { get; set; }
+
     /// <summary>The line drawn on the board. A player with no nickname yet is still a player.</summary>
     [JsonIgnore]
     public string Summary =>

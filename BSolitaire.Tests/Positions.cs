@@ -19,26 +19,27 @@ public static class Positions
 
     public static Card Down(Suit suit, Rank rank) => new(suit, rank);
 
-    /// <summary>A board with no cards anywhere. Every pile is a plain list, so emptying them
-    /// is all it takes — and a position of three cards is far easier to reason about than
-    /// fifty-two in an order nobody chose.</summary>
+    /// <summary>A board with no cards anywhere. A position of three cards is far easier to
+    /// reason about than fifty-two in an order nobody chose.</summary>
     public static Board Empty()
     {
         var board = new Board();
-        board.FaceDownPile.Clear();
-        board.FaceUpPile.Clear();
-
-        foreach (var pile in board.FoundationPiles)
-        {
-            pile.Clear();
-        }
-
-        foreach (var pile in board.TableauPiles)
-        {
-            pile.Clear();
-        }
-
+        ClearAll(board);
         return board;
+    }
+
+    /// <summary>Takes every card off a board that has already been dealt. Tests that need a
+    /// live <see cref="Solitaire"/> cannot start from <see cref="Empty"/>, so they clear the
+    /// board it dealt instead.</summary>
+    public static void ClearAll(Board board)
+    {
+        foreach (var kind in Board.AllKinds)
+        {
+            for (int i = 0; i < board.PileCountOf(kind); i++)
+            {
+                board.Mutable(new Location(kind, i)).Clear();
+            }
+        }
     }
 
     /// <summary>
@@ -56,10 +57,10 @@ public static class Positions
 
             for (int rank = (int)Rank.Ace; rank <= (int)Rank.Queen; rank++)
             {
-                board.FoundationPiles[i].Add(Up(suit, (Rank)rank));
+                board.Mutable(Foundation(i)).Add(Up(suit, (Rank)rank));
             }
 
-            board.TableauPiles[i].Add(Up(suit, Rank.King));
+            board.Mutable(Tableau(i)).Add(Up(suit, Rank.King));
         }
 
         return board;

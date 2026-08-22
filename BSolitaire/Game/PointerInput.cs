@@ -282,7 +282,14 @@ public sealed class PointerInput
         }
 
         var pile = board.Pile(loc);
-        cards = pile.GetRange(indexInPile, pile.Count - indexInPile);
+        var lifted = new List<Card>(pile.Count - indexInPile);
+
+        for (int i = indexInPile; i < pile.Count; i++)
+        {
+            lifted.Add(pile[i]);
+        }
+
+        cards = lifted;
         return true;
     }
 
