@@ -23,16 +23,16 @@ public class UndoTests
     public void AMoveCanBeTakenBack()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         Assert.True(board.MakeMove(new Move(Tableau(0), Tableau(1), 1)));
         Assert.True(board.CanUndo);
         Assert.True(board.Undo());
 
-        Assert.Single(board.TableauPiles[0]);
-        Assert.Single(board.TableauPiles[1]);
-        Assert.Equal(Rank.Nine, board.TableauPiles[0][0].Rank);
+        Assert.Single(board.Position.TableauPiles[0]);
+        Assert.Single(board.Position.TableauPiles[1]);
+        Assert.Equal(Rank.Nine, board.Position.TableauPiles[0][0].Rank);
     }
 
     [Fact]
@@ -41,33 +41,33 @@ public class UndoTests
         // The reason undo is a snapshot rather than a move played backwards. Moving the nine
         // off turns the card beneath it up, and that flip is no part of the move itself.
         var board = Empty();
-        board.TableauPiles[0].Add(Down(Suit.Clubs, Rank.Four));
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Down(Suit.Clubs, Rank.Four));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         board.MakeMove(new Move(Tableau(0), Tableau(1), 1));
-        Assert.True(board.TableauPiles[0][0].IsFaceUp);
+        Assert.True(board.Position.TableauPiles[0][0].IsFaceUp);
 
         board.Undo();
-        Assert.False(board.TableauPiles[0][0].IsFaceUp);
+        Assert.False(board.Position.TableauPiles[0][0].IsFaceUp);
     }
 
     [Fact]
     public void TurningTheWasteOverCanBeTakenBack()
     {
         var board = Empty();
-        board.FaceUpPile.Add(Up(Suit.Hearts, Rank.Two));
-        board.FaceUpPile.Add(Up(Suit.Spades, Rank.Three));
+        board.Position.Place(Waste, Up(Suit.Hearts, Rank.Two));
+        board.Position.Place(Waste, Up(Suit.Spades, Rank.Three));
 
         Assert.True(board.RecycleWaste());
-        Assert.Equal(2, board.FaceDownPile.Count);
+        Assert.Equal(2, board.Position.FaceDownPile.Count);
 
         board.Undo();
 
-        Assert.Empty(board.FaceDownPile);
-        Assert.Equal(2, board.FaceUpPile.Count);
-        Assert.True(board.FaceUpPile[^1].IsFaceUp);
-        Assert.Equal(Rank.Three, board.FaceUpPile[^1].Rank);
+        Assert.Empty(board.Position.FaceDownPile);
+        Assert.Equal(2, board.Position.FaceUpPile.Count);
+        Assert.True(board.Position.FaceUpPile[^1].IsFaceUp);
+        Assert.Equal(Rank.Three, board.Position.FaceUpPile[^1].Rank);
     }
 
     [Fact]
@@ -96,8 +96,8 @@ public class UndoTests
         ClearBoard(board);
 
         // A board with one move on it, and that move ends the game.
-        board.FoundationPiles[0].Add(Up(Suit.Clubs, Rank.Ace));
-        board.TableauPiles[0].Add(Up(Suit.Clubs, Rank.Two));
+        board.Position.Place(Foundation(0), Up(Suit.Clubs, Rank.Ace));
+        board.Position.Place(Tableau(0), Up(Suit.Clubs, Rank.Two));
 
         int dealBefore = board.DealId;
         board.MakeMove(new Move(Tableau(0), Foundation(0), 1));
@@ -122,8 +122,8 @@ public class UndoTests
     public void DealingAgainForgetsTheGameBefore()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
         board.MakeMove(new Move(Tableau(0), Tableau(1), 1));
 
         board.Reset();
@@ -138,14 +138,14 @@ public class UndoTests
         game.Resize(1200, 800);
         ClearBoard(game.Board);
 
-        game.Board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        game.Board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        game.Board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        game.Board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
         game.Board.MakeMove(new Move(Tableau(0), Tableau(1), 1));
 
         Assert.True(game.CanUndo);
         game.OnKeyDown("KeyZ");
 
-        Assert.Single(game.Board.TableauPiles[0]);
+        Assert.Single(game.Board.Position.TableauPiles[0]);
         Assert.False(game.CanUndo);
     }
 
@@ -156,14 +156,14 @@ public class UndoTests
         game.Resize(1200, 800);
         ClearBoard(game.Board);
 
-        game.Board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        game.Board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        game.Board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        game.Board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
         game.Board.MakeMove(new Move(Tableau(0), Tableau(1), 1));
 
         var button = game.Layout.UndoButton;
         game.OnPointerDown(button.X + button.W / 2, button.Y + button.H / 2);
 
-        Assert.Single(game.Board.TableauPiles[0]);
+        Assert.Single(game.Board.Position.TableauPiles[0]);
     }
 
     [Fact]
@@ -186,17 +186,6 @@ public class UndoTests
 
     private static void ClearBoard(Board board)
     {
-        board.FaceDownPile.Clear();
-        board.FaceUpPile.Clear();
-
-        foreach (var pile in board.FoundationPiles)
-        {
-            pile.Clear();
-        }
-
-        foreach (var pile in board.TableauPiles)
-        {
-            pile.Clear();
-        }
+        board.Position.Strip();
     }
 }

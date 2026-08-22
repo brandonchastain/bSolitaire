@@ -1,6 +1,6 @@
 namespace BSolitaire.Game;
 
-public readonly record struct Rect(double X, double Y, double W, double H)
+internal readonly record struct Rect(double X, double Y, double W, double H)
 {
     public bool Contains(double x, double y) => x >= X && x < X + W && y >= Y && y < Y + H;
 }
@@ -8,7 +8,7 @@ public readonly record struct Rect(double X, double Y, double W, double H)
 /// <summary>
 /// Handles board geometry and layout.
 /// </summary>
-public sealed class BoardLayout
+internal sealed class BoardLayout
 {
     /// <summary>Playing-card proportions, height over width.</summary>
     private const double CardAspect = 1.4;
@@ -49,6 +49,13 @@ public sealed class BoardLayout
     /// the bottom. Longer columns exist but are rare enough not to drive the layout.</summary>
     private const int FannedCardsToFit = 13;
 
+    /// <summary>Where a full pip layout stops being worth printing: below this a pip is
+    /// under four and a half pixels across.</summary>
+    private const double SmallCardWidth = 64;
+
+    /// <summary>Piles that can be dropped onto. The stock and waste are never drop targets.</summary>
+    private static readonly PileKind[] DropTargetKinds = [PileKind.Tableau, PileKind.Foundation];
+
     private double gutter;
     private double margin;
     private double originX;
@@ -85,10 +92,6 @@ public sealed class BoardLayout
     /// </summary>
     public bool SmallCards => CardWidth < SmallCardWidth;
 
-    /// <summary>Where a full pip layout stops being worth printing: below this a pip is
-    /// under four and a half pixels across.</summary>
-    private const double SmallCardWidth = 64;
-
     /// <summary>Derived from the viewport — never set directly.</summary>
     public double CardWidth { get; private set; }
 
@@ -123,9 +126,6 @@ public sealed class BoardLayout
     /// them, so the bottom corner is the one part of the board that is reliably empty.
     /// </summary>
     public Rect MuteButton { get; private set; }
-
-    /// <summary>Piles that can be dropped onto. The stock and waste are never drop targets.</summary>
-    private static readonly PileKind[] DropTargetKinds = [PileKind.Tableau, PileKind.Foundation];
 
     /// <summary>
     /// Recomputes every dimension from the viewport. Card size is whatever lets the whole
@@ -177,7 +177,7 @@ public sealed class BoardLayout
         FanOffset = Math.Clamp(toFit, CardHeight * 0.12, CardHeight * Blend(0.5, 0.28));
 
         // Sized off the card rather than the viewport, so the panel and its text keep the
-        // same proportions as everything else on the board.
+        // same proportions as everything else on the position.
         double bannerW = Math.Min(width - 2 * gutter, CardWidth * 4.4);
         double bannerH = CardHeight * 1.15;
         Banner = new Rect((width - bannerW) / 2, (height - bannerH) / 2, bannerW, bannerH);
@@ -207,22 +207,6 @@ public sealed class BoardLayout
         double ffH = CardHeight * 0.42;
         FastForwardButton = new Rect((width - ffW) / 2, height - ffH - gutter * 2, ffW, ffH);
     }
-
-    /// <summary>The phone value or the window value, or wherever between them this board
-    /// sits. Every difference between the two layouts goes through here.</summary>
-    private double Blend(double phone, double window) =>
-        phone + (window - phone) * (1 - Compactness);
-
-    /// <summary>A smooth 0-to-1 ramp between two widths, flat at both ends. Flat matters: a
-    /// linear ramp still changes the layout's mind abruptly at each end of the range.</summary>
-    private static double Smoothstep(double value, double from, double to)
-    {
-        double t = Math.Clamp((value - from) / (to - from), 0, 1);
-        return t * t * (3 - 2 * t);
-    }
-
-    /// <summary>Left edge of one of the seven columns the whole board is built on.</summary>
-    private double ColumnX(int column) => originX + margin + column * (CardWidth + gutter);
 
     public Rect CardRect(Location loc, int indexInPile)
     {
@@ -272,17 +256,17 @@ public sealed class BoardLayout
     }
 
     /// <summary>
-    /// Pile-level hit test, used for drop targets. Extends tableau columns to bottom of the board.
+    /// Pile-level hit test, used for drop targets. Extends tableau columns to bottom of the position.
     /// </summary>
-    public bool TryHitPile(Board board, double x, double y, out Location loc)
+    public bool TryHitPile(Position position, double x, double y, out Location loc)
     {
         foreach (var kind in DropTargetKinds)
         {
-            int pileCount = board.PileCountOf(kind);
+            int pileCount = position.PileCountOf(kind);
             for (int pileIndex = 0; pileIndex < pileCount; pileIndex++)
             {
                 var location = new Location(kind, pileIndex);
-                var pile = board.Pile(location);
+                var pile = position.Pile(location);
                 var slot = EmptySlot(location);
 
                 // A tableau column runs to the bottom of the board; everything else
@@ -304,15 +288,15 @@ public sealed class BoardLayout
         return false;
     }
 
-    public bool TryHitTest(Board board, double x, double y, out Location loc, out int indexInPile)
+    public bool TryHitTest(Position position, double x, double y, out Location loc, out int indexInPile)
     {
-        foreach (var kind in Board.AllKinds)
+        foreach (var kind in Position.AllKinds)
         {
-            int pileCount = board.PileCountOf(kind);
+            int pileCount = position.PileCountOf(kind);
             for (int pileIndex = 0; pileIndex < pileCount; pileIndex++)
             {
                 var location = new Location(kind, pileIndex);
-                var pile = board.Pile(location);
+                var pile = position.Pile(location);
 
                 if (pile.Count == 0)
                 {
@@ -341,4 +325,20 @@ public sealed class BoardLayout
 
         return false;
     }
+
+    /// <summary>A smooth 0-to-1 ramp between two widths, flat at both ends. Flat matters: a
+    /// linear ramp still changes the layout's mind abruptly at each end of the range.</summary>
+    private static double Smoothstep(double value, double from, double to)
+    {
+        double t = Math.Clamp((value - from) / (to - from), 0, 1);
+        return t * t * (3 - 2 * t);
+    }
+
+    /// <summary>The phone value or the window value, or wherever between them this board
+    /// sits. Every difference between the two layouts goes through here.</summary>
+    private double Blend(double phone, double window) =>
+        phone + (window - phone) * (1 - Compactness);
+
+    /// <summary>Left edge of one of the seven columns the whole board is built on.</summary>
+    private double ColumnX(int column) => originX + margin + column * (CardWidth + gutter);
 }

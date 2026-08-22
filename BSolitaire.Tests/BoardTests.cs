@@ -15,15 +15,15 @@ public class BoardTests
     {
         var board = new Board();
 
-        Assert.Equal(24, board.FaceDownPile.Count);
-        Assert.Empty(board.FaceUpPile);
+        Assert.Equal(24, board.Position.FaceDownPile.Count);
+        Assert.Empty(board.Position.FaceUpPile);
 
         for (int i = 0; i < 7; i++)
         {
-            Assert.Equal(i + 1, board.TableauPiles[i].Count);
+            Assert.Equal(i + 1, board.Position.TableauPiles[i].Count);
         }
 
-        Assert.All(board.FoundationPiles, Assert.Empty);
+        Assert.All(board.Position.FoundationPiles, Assert.Empty);
     }
 
     [Fact]
@@ -31,7 +31,7 @@ public class BoardTests
     {
         var board = new Board();
 
-        foreach (var pile in board.TableauPiles)
+        foreach (var pile in board.Position.TableauPiles)
         {
             Assert.True(pile[^1].IsFaceUp);
 
@@ -65,9 +65,9 @@ public class BoardTests
         var board = new Board();
 
         Assert.True(board.DealFromStock());
-        Assert.Equal(23, board.FaceDownPile.Count);
-        Assert.Single(board.FaceUpPile);
-        Assert.True(board.FaceUpPile[^1].IsFaceUp);
+        Assert.Equal(23, board.Position.FaceDownPile.Count);
+        Assert.Single(board.Position.FaceUpPile);
+        Assert.True(board.Position.FaceUpPile[^1].IsFaceUp);
     }
 
     [Fact]
@@ -79,25 +79,25 @@ public class BoardTests
         {
         }
 
-        Assert.Empty(board.FaceDownPile);
-        Assert.Equal(24, board.FaceUpPile.Count);
+        Assert.Empty(board.Position.FaceDownPile);
+        Assert.Equal(24, board.Position.FaceUpPile.Count);
 
         Assert.True(board.RecycleWaste());
-        Assert.Equal(24, board.FaceDownPile.Count);
-        Assert.Empty(board.FaceUpPile);
-        Assert.All(board.FaceDownPile, card => Assert.False(card.IsFaceUp));
+        Assert.Equal(24, board.Position.FaceDownPile.Count);
+        Assert.Empty(board.Position.FaceUpPile);
+        Assert.All(board.Position.FaceDownPile, card => Assert.False(card.IsFaceUp));
     }
 
     [Fact]
     public void AnIllegalMoveChangesNothingAndSaysSo()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Diamonds, Rank.Ten)); // same colour
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Diamonds, Rank.Ten)); // same colour
 
         Assert.False(board.MakeMove(new Move(Tableau(0), Tableau(1), 1)));
-        Assert.Single(board.TableauPiles[0]);
-        Assert.Single(board.TableauPiles[1]);
+        Assert.Single(board.Position.TableauPiles[0]);
+        Assert.Single(board.Position.TableauPiles[1]);
         Assert.Contains(Sound.Invalid, board.Sounds);
     }
 
@@ -105,12 +105,12 @@ public class BoardTests
     public void UncoveringATableauCardTurnsItOver()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Down(Suit.Clubs, Rank.Four));
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Down(Suit.Clubs, Rank.Four));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         Assert.True(board.MakeMove(new Move(Tableau(0), Tableau(1), 1)));
-        Assert.True(board.TableauPiles[0][^1].IsFaceUp);
+        Assert.True(board.Position.TableauPiles[0][^1].IsFaceUp);
         Assert.Contains(Sound.Flip, board.Sounds);
     }
 
@@ -120,16 +120,16 @@ public class BoardTests
         // Two face-down cards under the run. Lifting it exposes the upper one and no more —
         // the one below it is still covered and stays hidden.
         var board = Empty();
-        board.TableauPiles[0].Add(Down(Suit.Clubs, Rank.Four));
-        board.TableauPiles[0].Add(Down(Suit.Clubs, Rank.Three));
-        board.TableauPiles[0].Add(Up(Suit.Spades, Rank.Ten));
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Diamonds, Rank.Jack));
+        board.Position.Place(Tableau(0), Down(Suit.Clubs, Rank.Four));
+        board.Position.Place(Tableau(0), Down(Suit.Clubs, Rank.Three));
+        board.Position.Place(Tableau(0), Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Diamonds, Rank.Jack));
 
         Assert.True(board.MakeMove(new Move(Tableau(0), Tableau(1), 2)));
-        Assert.Equal(2, board.TableauPiles[0].Count);
-        Assert.True(board.TableauPiles[0][1].IsFaceUp);
-        Assert.False(board.TableauPiles[0][0].IsFaceUp);
+        Assert.Equal(2, board.Position.TableauPiles[0].Count);
+        Assert.True(board.Position.TableauPiles[0][1].IsFaceUp);
+        Assert.False(board.Position.TableauPiles[0][0].IsFaceUp);
     }
 
     [Fact]
@@ -147,12 +147,12 @@ public class BoardTests
     public void AnAceSettlesForAnyEmptyFoundation()
     {
         var board = Empty();
-        board.FoundationPiles[(int)Suit.Hearts].Add(Up(Suit.Spades, Rank.Ace));
+        board.Position.Place(Foundation((int)Suit.Hearts), Up(Suit.Spades, Rank.Ace));
 
         var home = board.FoundationFor(Up(Suit.Hearts, Rank.Ace));
 
         Assert.NotNull(home);
-        Assert.Empty(board.FoundationPiles[home!.Value.PileIndex]);
+        Assert.Empty(board.Position.FoundationPiles[home!.Value.PileIndex]);
     }
 
     [Fact]
@@ -167,7 +167,7 @@ public class BoardTests
     public void AMoveBumpsTheVersionAndAnIllegalOneDoesNot()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Ace));
         int before = board.Version;
 
         Assert.False(board.MakeMove(new Move(Tableau(0), Tableau(1), 1))); // an ace is not a king
@@ -188,7 +188,7 @@ public class BoardTests
         }
 
         Assert.Equal(GameState.Won, board.State);
-        Assert.Equal(52, board.FoundationTotal);
+        Assert.Equal(52, board.Position.FoundationTotal);
         Assert.Contains(Sound.Win, board.Sounds);
     }
 
@@ -196,9 +196,9 @@ public class BoardTests
     public void APositionWithNothingLeftToDoIsStuck()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.King));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Queen));
-        board.TableauPiles[2].Add(Up(Suit.Hearts, Rank.Two));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Queen));
+        board.Position.Place(Tableau(2), Up(Suit.Hearts, Rank.Two));
 
         // Any move at all, to make the board work out where it stands.
         board.MakeMove(new Move(Tableau(1), Tableau(0), 1));
@@ -210,7 +210,7 @@ public class BoardTests
     public void TheBoardOffersToFinishOnceNothingIsFaceDown()
     {
         var board = FourKingsFromDone();
-        board.MakeMove(new Move(Tableau(0), Foundation(0), 1));
+        board.Settle();
 
         Assert.True(board.CanFastForward);
     }
@@ -236,7 +236,7 @@ public class BoardTests
         }
 
         Assert.Equal(GameState.Won, board.State);
-        Assert.Equal(52, board.FoundationTotal);
+        Assert.Equal(52, board.Position.FoundationTotal);
     }
 
     [Fact]
@@ -244,14 +244,14 @@ public class BoardTests
     {
         // Nothing on the tableau to play, and the card that can go home is under the stock.
         var board = Empty();
-        board.FaceDownPile.Add(Down(Suit.Hearts, Rank.Ace));
-        board.TableauPiles[0].Add(Up(Suit.Spades, Rank.King));
+        board.Position.Place(Stock, Down(Suit.Hearts, Rank.Ace));
+        board.Position.Place(Tableau(0), Up(Suit.Spades, Rank.King));
 
         Assert.True(board.FastForwardStep());
-        Assert.Single(board.FaceUpPile);
+        Assert.Single(board.Position.FaceUpPile);
 
         Assert.True(board.FastForwardStep());
-        Assert.Equal(1, board.FoundationTotal);
+        Assert.Equal(1, board.Position.FoundationTotal);
     }
 
     [Fact]
@@ -260,16 +260,16 @@ public class BoardTests
         var board = FourKingsFromDone();
         board.Reset();
 
-        Assert.Equal(24, board.FaceDownPile.Count);
+        Assert.Equal(24, board.Position.FaceDownPile.Count);
         Assert.Equal(GameState.Playing, board.State);
-        Assert.Equal(0, board.FoundationTotal);
+        Assert.Equal(0, board.Position.FoundationTotal);
     }
 
     [Fact]
     public void AMoveMarksBothPilesForRedraw()
     {
         var board = Empty();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Ace));
         board.ClearDirty();
 
         board.MakeMove(new Move(Tableau(0), Foundation(0), 1));
@@ -278,17 +278,17 @@ public class BoardTests
         Assert.Contains(Foundation(0), board.DirtyPiles);
     }
 
-    private static IEnumerable<List<Card>> AllPiles(Board board)
+    private static IEnumerable<IReadOnlyList<Card>> AllPiles(Board board)
     {
-        yield return board.FaceDownPile;
-        yield return board.FaceUpPile;
+        yield return board.Position.FaceDownPile;
+        yield return board.Position.FaceUpPile;
 
-        foreach (var pile in board.FoundationPiles)
+        foreach (var pile in board.Position.FoundationPiles)
         {
             yield return pile;
         }
 
-        foreach (var pile in board.TableauPiles)
+        foreach (var pile in board.Position.TableauPiles)
         {
             yield return pile;
         }

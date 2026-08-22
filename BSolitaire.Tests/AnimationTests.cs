@@ -15,20 +15,12 @@ public class AnimationTests
     private const double Width = 1200;
     private const double Height = 800;
 
-    private static (Board Board, BoardLayout Layout, Animator Animator) Table()
-    {
-        var board = Empty();
-        board.ClearMotions();
-        var layout = new BoardLayout(Width, Height);
-        return (board, layout, new Animator(board, layout));
-    }
-
     [Fact]
     public void AMoveIsReportedAsACardTravelling()
     {
         var (board, _, animator) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         board.MakeMove(new Move(Tableau(0), Tableau(1), 1));
         animator.Capture(0);
@@ -43,8 +35,8 @@ public class AnimationTests
     {
         // Otherwise it is drawn twice: once where it now belongs, and once in mid-air.
         var (board, _, animator) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         board.MakeMove(new Move(Tableau(0), Tableau(1), 1));
         animator.Capture(0);
@@ -58,8 +50,8 @@ public class AnimationTests
     public void ACardThatHasArrivedIsGivenBackToItsPile()
     {
         var (board, _, animator) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         board.MakeMove(new Move(Tableau(0), Tableau(1), 1));
         animator.Capture(0);
@@ -80,8 +72,8 @@ public class AnimationTests
     public void ACardTravelsFromWhereItWasToWhereItIsGoing()
     {
         var (board, layout, animator) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         var start = layout.CardRect(Tableau(0), 0);
         var end = layout.CardRect(Tableau(1), 1);
@@ -101,13 +93,13 @@ public class AnimationTests
     public void ACardOffTheStockTurnsOverOnTheWay()
     {
         var (board, _, animator) = Table();
-        board.FaceDownPile.Add(Down(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Stock, Down(Suit.Hearts, Rank.Nine));
 
         board.DealFromStock();
         animator.Capture(0);
 
         // The board has already turned it over. The picture has not, until half way.
-        Assert.True(board.FaceUpPile[0].IsFaceUp);
+        Assert.True(board.Position.FaceUpPile[0].IsFaceUp);
         Assert.False(animator.InFlight[0].FaceUp);
 
         // Stock to waste is one column, so it is one of the quick ones — past half way well
@@ -120,9 +112,9 @@ public class AnimationTests
     public void AnUncoveredCardTurnsOverWhereItLies()
     {
         var (board, layout, animator) = Table();
-        board.TableauPiles[0].Add(Down(Suit.Clubs, Rank.Four));
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Down(Suit.Clubs, Rank.Four));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         board.MakeMove(new Move(Tableau(0), Tableau(1), 1));
         animator.Capture(0);
@@ -180,8 +172,8 @@ public class AnimationTests
         // Animating that literally means a stack the player has just dragged across the
         // board snaps back to where it started and flies out again.
         var (board, layout, animator) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         // Let go of it a long way from either column.
         var releasedAt = new Rect(600, 700, layout.CardWidth, layout.CardHeight);
@@ -201,8 +193,8 @@ public class AnimationTests
         // An illegal drop makes no move at all. The next real move must not be animated from
         // a pointer that has long since moved on.
         var (board, layout, animator) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         animator.ReleaseAt(Tableau(0), 0, new Rect(600, 700, layout.CardWidth, layout.CardHeight));
         animator.Capture(0); // nothing was moved, so nothing is captured
@@ -225,41 +217,12 @@ public class AnimationTests
         Assert.True(far > near, $"a move across the board ({far}ms) is no slower than one next door ({near}ms)");
     }
 
-    /// <summary>How long a nine takes to reach a ten in the given column, from column 0.</summary>
-    private static double TimeToMove(Location destination)
-    {
-        var (board, _, animator) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.Pile(destination).Add(Up(Suit.Spades, Rank.Ten));
-
-        Assert.True(board.MakeMove(new Move(Tableau(0), destination, 1)));
-        animator.Capture(0);
-
-        return Settled(animator);
-    }
-
-    /// <summary>How long until nothing is moving, to the nearest millisecond.</summary>
-    private static double Settled(Animator animator)
-    {
-        for (double t = 1; t < 2000; t++)
-        {
-            animator.Tick(t);
-
-            if (!animator.Busy)
-            {
-                return t;
-            }
-        }
-
-        return 2000;
-    }
-
     [Fact]
     public void ClearingLandsEverythingImmediately()
     {
         var (board, _, animator) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
         board.MakeMove(new Move(Tableau(0), Tableau(1), 1));
         animator.Capture(0);
 
@@ -275,7 +238,7 @@ public class AnimationTests
     {
         var board = FourKingsFromDone();
         var layout = new BoardLayout(Width, Height);
-        var cascade = new WinCascade(board, layout);
+        var cascade = new WinCascade(board.Position, layout);
 
         for (int i = 0; i < 4; i++)
         {
@@ -297,7 +260,7 @@ public class AnimationTests
         }
 
         Assert.NotEqual(before, cascade.Falling.Count > 0 ? cascade.Falling[0].Y : before + 1);
-        Assert.Equal(52, board.FoundationTotal);
+        Assert.Equal(52, board.Position.FoundationTotal);
     }
 
     [Fact]
@@ -305,7 +268,7 @@ public class AnimationTests
     {
         var board = FourKingsFromDone();
         var layout = new BoardLayout(Width, Height);
-        var cascade = new WinCascade(board, layout);
+        var cascade = new WinCascade(board.Position, layout);
 
         for (int i = 0; i < 4; i++)
         {
@@ -331,18 +294,7 @@ public class AnimationTests
         game.Resize(Width, Height);
 
         var board = game.Board;
-        foreach (var pile in board.FoundationPiles)
-        {
-            pile.Clear();
-        }
-
-        foreach (var pile in board.TableauPiles)
-        {
-            pile.Clear();
-        }
-
-        board.FaceDownPile.Clear();
-        board.FaceUpPile.Clear();
+        board.Position.Strip();
         board.ClearMotions();
 
         for (int i = 0; i < 4; i++)
@@ -350,10 +302,10 @@ public class AnimationTests
             var suit = (Suit)i;
             for (int rank = (int)Rank.Ace; rank <= (int)Rank.Queen; rank++)
             {
-                board.FoundationPiles[i].Add(Up(suit, (Rank)rank));
+                board.Position.Place(Foundation(i), Up(suit, (Rank)rank));
             }
 
-            board.TableauPiles[i].Add(Up(suit, Rank.King));
+            board.Position.Place(Tableau(i), Up(suit, Rank.King));
         }
 
         for (int i = 0; i < 4; i++)
@@ -374,5 +326,42 @@ public class AnimationTests
         // A press cuts it short, and then the board asks what the player wants next.
         game.OnPointerDown(Width / 2, Height / 2);
         Assert.True(game.ShowBanner);
+    }
+
+    private static (Board Board, BoardLayout Layout, Animator Animator) Table()
+    {
+        var board = Empty();
+        board.ClearMotions();
+        var layout = new BoardLayout(Width, Height);
+        return (board, layout, new Animator(board, layout));
+    }
+
+    /// <summary>How long a nine takes to reach a ten in the given column, from column 0.</summary>
+    private static double TimeToMove(Location destination)
+    {
+        var (board, _, animator) = Table();
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(destination, Up(Suit.Spades, Rank.Ten));
+
+        Assert.True(board.MakeMove(new Move(Tableau(0), destination, 1)));
+        animator.Capture(0);
+
+        return Settled(animator);
+    }
+
+    /// <summary>How long until nothing is moving, to the nearest millisecond.</summary>
+    private static double Settled(Animator animator)
+    {
+        for (double t = 1; t < 2000; t++)
+        {
+            animator.Tick(t);
+
+            if (!animator.Busy)
+            {
+                return t;
+            }
+        }
+
+        return 2000;
     }
 }

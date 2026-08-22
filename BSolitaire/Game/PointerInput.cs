@@ -5,7 +5,7 @@ namespace BSolitaire.Game;
 /// dragging — the drawer skips them and paints them at the cursor instead — so abandoning
 /// a drag needs no undo, and an illegal drop snaps back for free.
 /// </summary>
-public sealed class DragState
+internal sealed class DragState
 {
     public required Location From { get; init; }
 
@@ -33,7 +33,7 @@ public sealed class DragState
 /// what the rules are (<see cref="Rules"/>), how a move is applied (<see cref="Board"/>),
 /// or how any of it is drawn.
 /// </summary>
-public sealed class PointerInput
+internal sealed class PointerInput
 {
     /// <summary>How far the pointer must travel before a press counts as a drag, not a tap.</summary>
     private const double DragThreshold = 4;
@@ -52,6 +52,9 @@ public sealed class PointerInput
     /// still shows the card and asks for less travel.
     /// </summary>
     private const double TouchLift = 0.25;
+
+    /// <summary>The only two kinds of pile anything can be dropped on.</summary>
+    private static readonly PileKind[] DropKinds = [PileKind.Tableau, PileKind.Foundation];
 
     private readonly Board board;
     private readonly BoardLayout layout;
@@ -119,7 +122,7 @@ public sealed class PointerInput
             return; // the panel is on top; nothing under it is grabbable
         }
 
-        if (!layout.TryHitTest(board, x, y, out Location loc, out int indexInPile))
+        if (!layout.TryHitTest(board.Position, x, y, out Location loc, out int indexInPile))
         {
             return;
         }
@@ -148,34 +151,6 @@ public sealed class PointerInput
     }
 
     /// <summary>
-    /// Asks the rules where this stack could go, once, at the moment it leaves its pile.
-    /// Neither the stack nor the rest of the board can change while it is held, so the answer
-    /// cannot go stale — and the same <see cref="Rules.IsLegal"/> that will judge the drop is
-    /// what answers, so the board never offers a target that would then refuse the card.
-    /// </summary>
-    private void FindDropTargets(Location from, int count)
-    {
-        dropTargets.Clear();
-
-        foreach (var kind in DropKinds)
-        {
-            int pileCount = board.PileCountOf(kind);
-            for (int pileIndex = 0; pileIndex < pileCount; pileIndex++)
-            {
-                var to = new Location(kind, pileIndex);
-
-                if (to != from && Rules.IsLegal(board, new Move(from, to, count)))
-                {
-                    dropTargets.Add(to);
-                }
-            }
-        }
-    }
-
-    /// <summary>The only two kinds of pile anything can be dropped on.</summary>
-    private static readonly PileKind[] DropKinds = [PileKind.Tableau, PileKind.Foundation];
-
-    /// <summary>
     /// Pointer moved to (x, y). Returns true if the picture changed, which is only while a
     /// stack is actually held — plain hovering must not force a redraw.
     /// </summary>
@@ -198,41 +173,6 @@ public sealed class PointerInput
         }
 
         return true;
-    }
-
-    /// <summary>
-    /// Works out what the pointer is resting on. Returns true when that changed, which is
-    /// the only time hovering is worth a redraw — the pointer crosses a card once and then
-    /// spends dozens of frames inside it.
-    /// </summary>
-    private bool UpdateHover(double x, double y)
-    {
-        Location? pile = null;
-        int index = -1;
-
-        if (drag == null &&
-            !OverBanner(x, y) &&
-            layout.TryHitTest(board, x, y, out Location loc, out int indexInPile) &&
-            TryGrab(loc, indexInPile, out _))
-        {
-            pile = loc;
-            index = indexInPile;
-        }
-
-        if (pile == hoverPile && index == hoverIndex)
-        {
-            return false;
-        }
-
-        hoverPile = pile;
-        hoverIndex = index;
-        return true;
-    }
-
-    private void ClearHover()
-    {
-        hoverPile = null;
-        hoverIndex = -1;
     }
 
     /// <summary>Pointer released at (x, y). Drops the held stack, or falls back to a tap.</summary>
@@ -276,13 +216,20 @@ public sealed class PointerInput
     {
         cards = Array.Empty<Card>();
 
-        if (!Rules.CanLift(board, loc, indexInPile))
+        if (!Rules.CanLift(board.Position, loc, indexInPile))
         {
             return false;
         }
 
-        var pile = board.Pile(loc);
-        cards = pile.GetRange(indexInPile, pile.Count - indexInPile);
+        var pile = board.Position.Pile(loc);
+        var lifted = new List<Card>(pile.Count - indexInPile);
+
+        for (int i = indexInPile; i < pile.Count; i++)
+        {
+            lifted.Add(pile[i]);
+        }
+
+        cards = lifted;
         return true;
     }
 
@@ -293,7 +240,7 @@ public sealed class PointerInput
         double probeX = x - held.OffsetX + layout.CardWidth / 2;
         double probeY = y - held.OffsetY + layout.CardHeight / 2;
 
-        if (!layout.TryHitPile(board, probeX, probeY, out Location dest) || dest == held.From)
+        if (!layout.TryHitPile(board.Position, probeX, probeY, out Location dest) || dest == held.From)
         {
             return;
         }
@@ -322,7 +269,7 @@ public sealed class PointerInput
             return;
         }
 
-        if (!layout.TryHitTest(board, x, y, out Location loc, out int indexInPile))
+        if (!layout.TryHitTest(board.Position, x, y, out Location loc, out int indexInPile))
         {
             ClearSelection(); // tapping bare felt cancels a selection
             return;
@@ -376,7 +323,7 @@ public sealed class PointerInput
     /// </summary>
     private bool SendHome(Location loc)
     {
-        var pile = board.Pile(loc);
+        var pile = board.Position.Pile(loc);
 
         if (loc.Kind == PileKind.Foundation || selectedCount != 1 || pile.Count == 0)
         {
@@ -400,18 +347,78 @@ public sealed class PointerInput
     /// </summary>
     private void Select(Location loc, int indexInPile)
     {
-        if (!Rules.CanLift(board, loc, indexInPile))
+        if (!Rules.CanLift(board.Position, loc, indexInPile))
         {
             return;
         }
 
         selected = loc;
-        selectedCount = board.Pile(loc).Count - indexInPile;
+        selectedCount = board.Position.Pile(loc).Count - indexInPile;
     }
 
     private void ClearSelection()
     {
         selected = null;
         selectedCount = 0;
+    }
+
+    /// <summary>
+    /// Asks the rules where this stack could go, once, at the moment it leaves its pile.
+    /// Neither the stack nor the rest of the board can change while it is held, so the answer
+    /// cannot go stale — and the same <see cref="Rules.IsLegal"/> that will judge the drop is
+    /// what answers, so the board never offers a target that would then refuse the card.
+    /// </summary>
+    private void FindDropTargets(Location from, int count)
+    {
+        dropTargets.Clear();
+
+        foreach (var kind in DropKinds)
+        {
+            int pileCount = board.Position.PileCountOf(kind);
+            for (int pileIndex = 0; pileIndex < pileCount; pileIndex++)
+            {
+                var to = new Location(kind, pileIndex);
+
+                if (to != from && Rules.IsLegal(board.Position, new Move(from, to, count)))
+                {
+                    dropTargets.Add(to);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Works out what the pointer is resting on. Returns true when that changed, which is
+    /// the only time hovering is worth a redraw — the pointer crosses a card once and then
+    /// spends dozens of frames inside it.
+    /// </summary>
+    private bool UpdateHover(double x, double y)
+    {
+        Location? pile = null;
+        int index = -1;
+
+        if (drag == null &&
+            !OverBanner(x, y) &&
+            layout.TryHitTest(board.Position, x, y, out Location loc, out int indexInPile) &&
+            TryGrab(loc, indexInPile, out _))
+        {
+            pile = loc;
+            index = indexInPile;
+        }
+
+        if (pile == hoverPile && index == hoverIndex)
+        {
+            return false;
+        }
+
+        hoverPile = pile;
+        hoverIndex = index;
+        return true;
+    }
+
+    private void ClearHover()
+    {
+        hoverPile = null;
+        hoverIndex = -1;
     }
 }

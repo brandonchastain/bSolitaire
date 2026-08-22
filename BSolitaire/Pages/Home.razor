@@ -207,10 +207,7 @@
 
                 if (saved is not null)
                 {
-                    game.Score.Nickname = saved.Nickname;
-                    game.Score.Games = saved.Games;
-                    game.Score.Wins = saved.Wins;
-                    game.Score.Muted = saved.Muted;
+                    game.Score.CopyFrom(saved);
                 }
             }
             catch (JsonException ex)

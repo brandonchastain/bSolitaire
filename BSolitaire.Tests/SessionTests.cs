@@ -11,18 +11,6 @@ namespace BSolitaire.Tests;
 /// </summary>
 public class SessionTests
 {
-    /// <summary>A game sized like a real viewport, so the buttons are where the layout puts
-    /// them rather than at the placeholder size.</summary>
-    private static Solitaire Sized()
-    {
-        var game = new Solitaire();
-        game.Resize(1200, 800);
-        game.MarkClean();
-        return game;
-    }
-
-    private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
-
     [Fact]
     public void AFreshGameWantsDrawingAndIsPlaying()
     {
@@ -90,8 +78,8 @@ public class SessionTests
 
         game.OnKeyDown("KeyR");
 
-        Assert.Equal(24, game.Board.FaceDownPile.Count);
-        Assert.Empty(game.Board.FaceUpPile);
+        Assert.Equal(24, game.Board.Position.FaceDownPile.Count);
+        Assert.Empty(game.Board.Position.FaceUpPile);
         Assert.NotEqual(before, game.Board.Version);
     }
 
@@ -128,13 +116,13 @@ public class SessionTests
 
         game.OnPointerDown(stockX, stockY);
         game.OnPointerUp(stockX, stockY);
-        Assert.Single(game.Board.FaceUpPile); // an ordinary tap deals
+        Assert.Single(game.Board.Position.FaceUpPile); // an ordinary tap deals
 
         var (muteX, muteY) = Centre(game.Layout.MuteButton);
         game.OnPointerDown(muteX, muteY);
         game.OnPointerUp(muteX, muteY);
 
-        Assert.Single(game.Board.FaceUpPile); // the swallowed release dealt nothing more
+        Assert.Single(game.Board.Position.FaceUpPile); // the swallowed release dealt nothing more
     }
 
     [Fact]
@@ -148,7 +136,7 @@ public class SessionTests
         game.OnPointerUp(x, y);
         game.Update(TimeSpan.FromMilliseconds(16));
 
-        Assert.Equal(0, game.Board.FoundationTotal);
+        Assert.Equal(0, game.Board.Position.FoundationTotal);
     }
 
     [Fact]
@@ -181,7 +169,7 @@ public class SessionTests
         game.Update(TimeSpan.FromMilliseconds(16));
 
         Assert.Equal(GameState.Playing, game.State);
-        Assert.True(game.Board.FoundationTotal < 52, "the whole finish happened inside one frame");
+        Assert.True(game.Board.Position.FoundationTotal < 52, "the whole finish happened inside one frame");
     }
 
     [Fact]
@@ -192,12 +180,12 @@ public class SessionTests
         var (x, y) = Centre(game.Layout.CardRect(Tableau(1), 0));
 
         game.OnPointerMove(x, y);
-        Assert.NotNull(game.HoverPile);
+        Assert.NotNull(game.GrabbablePile);
 
         game.OnKeyDown("Space");
         game.Update(TimeSpan.FromMilliseconds(16));
 
-        Assert.Null(game.HoverPile);
+        Assert.Null(game.GrabbablePile);
     }
 
     [Fact]
@@ -253,8 +241,8 @@ public class SessionTests
         var game = Sized();
         var board = game.Board;
         ClearBoard(board);
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.King));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Queen));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Queen));
         board.MakeMove(new Move(Tableau(1), Tableau(0), 1));
 
         game.Update(TimeSpan.FromMilliseconds(16));
@@ -340,9 +328,9 @@ public class SessionTests
         var board = game.Board;
         ClearBoard(board);
 
-        board.FoundationPiles[0].Add(FaceUp(Suit.Hearts, Rank.Ace));
-        board.TableauPiles[0].Add(FaceUp(Suit.Hearts, Rank.Three));
-        board.TableauPiles[0].Add(FaceUp(Suit.Hearts, Rank.Two));
+        board.Position.Place(Foundation(0), FaceUp(Suit.Hearts, Rank.Ace));
+        board.Position.Place(Tableau(0), FaceUp(Suit.Hearts, Rank.Three));
+        board.Position.Place(Tableau(0), FaceUp(Suit.Hearts, Rank.Two));
 
         var card = game.Layout.CardRect(new Location(PileKind.Tableau, 0), 1);
         double x = card.X + card.W / 2;
@@ -354,9 +342,9 @@ public class SessionTests
             game.OnPointerUp(x, y);
         }
 
-        Assert.Equal(2, board.FoundationPiles[0].Count);
-        Assert.Single(board.TableauPiles[0]);
-        Assert.Equal(Rank.Three, board.TableauPiles[0][0].Rank);
+        Assert.Equal(2, board.Position.FoundationPiles[0].Count);
+        Assert.Single(board.Position.TableauPiles[0]);
+        Assert.Equal(Rank.Three, board.Position.TableauPiles[0][0].Rank);
     }
 
     private static Card FaceUp(Suit suit, Rank rank)
@@ -368,18 +356,7 @@ public class SessionTests
 
     private static void ClearBoard(Board board)
     {
-        board.FaceDownPile.Clear();
-        board.FaceUpPile.Clear();
-
-        foreach (var pile in board.FoundationPiles)
-        {
-            pile.Clear();
-        }
-
-        foreach (var pile in board.TableauPiles)
-        {
-            pile.Clear();
-        }
+        board.Position.Strip();
     }
 
     /// <summary>Puts the session's own board one move per king from finished.</summary>
@@ -394,13 +371,25 @@ public class SessionTests
 
             for (int rank = (int)Rank.Ace; rank <= (int)Rank.Queen; rank++)
             {
-                board.FoundationPiles[i].Add(Up(suit, (Rank)rank));
+                board.Position.Place(Foundation(i), Up(suit, (Rank)rank));
             }
 
-            board.TableauPiles[i].Add(Up(suit, Rank.King));
+            board.Position.Place(Tableau(i), Up(suit, Rank.King));
         }
 
         // One real move, so the board works out that it is now finishable.
         board.MakeMove(new Move(Tableau(0), Foundation(0), 1));
     }
+
+    /// <summary>A game sized like a real viewport, so the buttons are where the layout puts
+    /// them rather than at the placeholder size.</summary>
+    private static Solitaire Sized()
+    {
+        var game = new Solitaire();
+        game.Resize(1200, 800);
+        game.MarkClean();
+        return game;
+    }
+
+    private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
 }

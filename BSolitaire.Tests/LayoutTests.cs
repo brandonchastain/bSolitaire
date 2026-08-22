@@ -29,12 +29,12 @@ public class LayoutTests
         var board = new Board();
         var layout = new BoardLayout(width, height);
 
-        foreach (var kind in Board.AllKinds)
+        foreach (var kind in Position.AllKinds)
         {
-            for (int pileIndex = 0; pileIndex < board.PileCountOf(kind); pileIndex++)
+            for (int pileIndex = 0; pileIndex < board.Position.PileCountOf(kind); pileIndex++)
             {
                 var loc = new Location(kind, pileIndex);
-                var pile = board.Pile(loc);
+                var pile = board.Position.Pile(loc);
 
                 if (pile.Count == 0)
                 {
@@ -47,7 +47,7 @@ public class LayoutTests
                 double x = rect.X + rect.W / 2;
                 double y = rect.Y + rect.H / 2;
 
-                Assert.True(layout.TryHitTest(board, x, y, out var hit, out int index),
+                Assert.True(layout.TryHitTest(board.Position, x, y, out var hit, out int index),
                     $"nothing at the centre of {kind} {pileIndex}");
                 Assert.Equal(loc, hit);
                 Assert.Equal(pile.Count - 1, index);
@@ -62,9 +62,9 @@ public class LayoutTests
         var board = new Board();
         var layout = new BoardLayout(width, height);
 
-        foreach (var kind in Board.AllKinds)
+        foreach (var kind in Position.AllKinds)
         {
-            for (int pileIndex = 0; pileIndex < board.PileCountOf(kind); pileIndex++)
+            for (int pileIndex = 0; pileIndex < board.Position.PileCountOf(kind); pileIndex++)
             {
                 var loc = new Location(kind, pileIndex);
                 var rect = layout.CardRect(loc, 0);
@@ -111,7 +111,7 @@ public class LayoutTests
 
         foreach (var (x, y) in Corners(layout.UndoButton))
         {
-            Assert.False(layout.TryHitTest(board, x, y, out _, out int index) && index >= 0,
+            Assert.False(layout.TryHitTest(board.Position, x, y, out _, out int index) && index >= 0,
                 $"the undo button covers a card at {width}x{height}");
         }
     }
@@ -216,7 +216,7 @@ public class LayoutTests
 
         foreach (var (x, y) in Corners(button))
         {
-            Assert.False(layout.TryHitTest(board, x, y, out var loc, out int index) && index >= 0,
+            Assert.False(layout.TryHitTest(board.Position, x, y, out var loc, out int index) && index >= 0,
                 $"the mute button covers a card at {width}x{height}");
         }
     }
@@ -230,7 +230,7 @@ public class LayoutTests
 
         foreach (var (x, y) in Corners(layout.FastForwardButton))
         {
-            Assert.False(layout.TryHitTest(board, x, y, out _, out int index) && index >= 0,
+            Assert.False(layout.TryHitTest(board.Position, x, y, out _, out int index) && index >= 0,
                 $"the finish button covers a card at {width}x{height}");
         }
     }
@@ -282,7 +282,7 @@ public class LayoutTests
         var layout = new BoardLayout(1200, 800);
         var slot = layout.EmptySlot(Tableau(4));
 
-        Assert.True(layout.TryHitTest(board, slot.X + slot.W / 2, slot.Y + slot.H / 2,
+        Assert.True(layout.TryHitTest(board.Position, slot.X + slot.W / 2, slot.Y + slot.H / 2,
             out var loc, out int index));
         Assert.Equal(Tableau(4), loc);
         Assert.Equal(-1, index); // nothing there to pick up
@@ -298,13 +298,13 @@ public class LayoutTests
         var board = new Board();
         var layout = new BoardLayout(width, height);
 
-        foreach (var kind in Board.AllKinds)
+        foreach (var kind in Position.AllKinds)
         {
-            for (int pileIndex = 0; pileIndex < board.PileCountOf(kind); pileIndex++)
+            for (int pileIndex = 0; pileIndex < board.Position.PileCountOf(kind); pileIndex++)
             {
                 var loc = new Location(kind, pileIndex);
                 var region = layout.PileRegion(loc);
-                var pile = board.Pile(loc);
+                var pile = board.Position.Pile(loc);
 
                 for (int card = 0; card < Math.Max(1, pile.Count); card++)
                 {
@@ -340,6 +340,15 @@ public class LayoutTests
         }
     }
 
+    [Fact]
+    public void APressOnBareFeltHitsNothing()
+    {
+        var board = new Board();
+        var layout = new BoardLayout(1200, 800);
+
+        Assert.False(layout.TryHitTest(board.Position, 1199, 1, out _, out _));
+    }
+
     private static IEnumerable<(double X, double Y)> Corners(Rect rect)
     {
         yield return (rect.X + 0.5, rect.Y + 0.5);
@@ -347,14 +356,5 @@ public class LayoutTests
         yield return (rect.X + 0.5, rect.Y + rect.H - 0.5);
         yield return (rect.X + rect.W - 0.5, rect.Y + rect.H - 0.5);
         yield return (rect.X + rect.W / 2, rect.Y + rect.H / 2);
-    }
-
-    [Fact]
-    public void APressOnBareFeltHitsNothing()
-    {
-        var board = new Board();
-        var layout = new BoardLayout(1200, 800);
-
-        Assert.False(layout.TryHitTest(board, 1199, 1, out _, out _));
     }
 }

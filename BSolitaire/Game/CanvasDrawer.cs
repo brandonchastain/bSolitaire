@@ -7,49 +7,8 @@ namespace BSolitaire.Game;
 /// <summary>
 /// Draws the game to a 2D canvas.
 /// </summary>
-public class CanvasDrawer : IGameDrawer
+internal sealed class CanvasDrawer : IGameDrawer
 {
-    /// <summary>Whichever context is being drawn into right now: the visible board, or the
-    /// off-screen copy the static part of the picture is kept on.</summary>
-    private Canvas2DContext ctx;
-
-    private readonly Canvas2DContext board;
-    private readonly Canvas2DContext cache;
-    private readonly ElementReference cacheElement;
-    private readonly Canvas2DContext heldCanvas;
-    private readonly ElementReference heldElement;
-    private readonly Canvas2DContext atlasCanvas;
-    private readonly ElementReference atlasElement;
-    private readonly Stopwatch clock = Stopwatch.StartNew();
-    private readonly Queue<double> recentDraws = new();
-
-    // Every canvas call crosses into JS, so the drawer keeps track of the context's
-    // current fill/stroke/font and skips setting a value that is already set. Cards
-    // repeat the same handful of styles dozens of times per frame.
-    private string? fillStyle;
-    private string? strokeStyle;
-    private string? font;
-    private string? textAlign;
-    private double lineWidth = -1;
-    private string rankFont = "";
-    private string tenFont = "";
-    private string courtFont = "";
-    private double lastDrawMs;
-
-    /// <summary>
-    /// Whether cards are being printed small. A card fifty pixels wide with a face scaled
-    /// down to match is a card nobody can read: the pips become dots and the index becomes a
-    /// smudge. So below that size the deck changes rather than shrinks — a jumbo index and
-    /// one large suit, which is exactly what a real deck for a small hand does. Keyed to the
-    /// card rather than to the screen, so a desktop window dragged narrow gets the same deck
-    /// a phone does at the same card size. The layout decides; this only reads it.
-    /// </summary>
-    private bool compact;
-
-    /// <summary>The game being drawn this frame. Held because the pile-level drawing has to
-    /// ask which of its cards are currently in the air somewhere else.</summary>
-    private Solitaire? current;
-
     // Palette. Warm paper and a soft edge rather than white on hard black: a pure-white
     // card outlined in black is the single thing that most makes a drawn deck look drawn.
     private const string Paper = "#fbfaf7";
@@ -105,7 +64,36 @@ public class CanvasDrawer : IGameDrawer
     private const double RowUpper = RowTop + (RowBottom - RowTop) / 3;
     private const double RowLower = RowBottom - (RowBottom - RowTop) / 3;
 
-    private readonly record struct Pip(double Col, double Row);
+    /// <summary>Faces plus the one back.</summary>
+    private const int SlotCount = 53;
+
+    /// <summary>The back's cell, after the fifty-two faces.</summary>
+    private const int BackSlot = 52;
+
+    /// <summary>Cells across the atlas. Thirteen ranks and the back make fourteen, which
+    /// keeps the grid four rows deep and both dimensions well inside what a mobile browser
+    /// will allocate — a single strip of fifty-three cards would be too tall for one.</summary>
+    private const int AtlasColumns = 14;
+
+    private const int AtlasRows = 4;
+
+    /// <summary>
+    /// Slack around each cell, in CSS pixels. A card's edge is stroked along its own
+    /// boundary, so half the line lies outside the card — and a cell cut to the card exactly
+    /// loses that half twice over: it falls outside the rectangle that gets blitted, and the
+    /// neighbouring cell clears it away when its own face is drawn. Cards came out with no
+    /// outline at all. The padding is blitted along with the face, so what lands on the board
+    /// is what the card would have looked like drawn straight onto it.
+    /// </summary>
+    private const double AtlasPad = 2;
+
+    /// <summary>
+    /// How many faces are drawn into the atlas per frame. The whole deck at once is a
+    /// visible stall on every resize, and nothing needs the whole deck at once — the cells
+    /// that are not ready yet are drawn the old way, so the board is right from the first
+    /// frame and merely gets cheaper over the next few.
+    /// </summary>
+    private const int WarmPerFrame = 6;
 
     /// <summary>
     /// Pip arrangements by rank, ace first, straight off a standard deck. Anything below the
@@ -170,37 +158,6 @@ public class CanvasDrawer : IGameDrawer
     // cells and blitted from there. A moving card costs one call instead of a hundred, and
     // so does a settled one — repainting a column got cheaper for free.
 
-    /// <summary>Faces plus the one back.</summary>
-    private const int SlotCount = 53;
-
-    /// <summary>The back's cell, after the fifty-two faces.</summary>
-    private const int BackSlot = 52;
-
-    /// <summary>Cells across the atlas. Thirteen ranks and the back make fourteen, which
-    /// keeps the grid four rows deep and both dimensions well inside what a mobile browser
-    /// will allocate — a single strip of fifty-three cards would be too tall for one.</summary>
-    private const int AtlasColumns = 14;
-
-    private const int AtlasRows = 4;
-
-    /// <summary>
-    /// Slack around each cell, in CSS pixels. A card's edge is stroked along its own
-    /// boundary, so half the line lies outside the card — and a cell cut to the card exactly
-    /// loses that half twice over: it falls outside the rectangle that gets blitted, and the
-    /// neighbouring cell clears it away when its own face is drawn. Cards came out with no
-    /// outline at all. The padding is blitted along with the face, so what lands on the board
-    /// is what the card would have looked like drawn straight onto it.
-    /// </summary>
-    private const double AtlasPad = 2;
-
-    /// <summary>
-    /// How many faces are drawn into the atlas per frame. The whole deck at once is a
-    /// visible stall on every resize, and nothing needs the whole deck at once — the cells
-    /// that are not ready yet are drawn the old way, so the board is right from the first
-    /// frame and merely gets cheaper over the next few.
-    /// </summary>
-    private const int WarmPerFrame = 6;
-
     private readonly bool[] atlasReady = new bool[SlotCount];
 
     /// <summary>Device pixels per CSS pixel. The one place the drawer needs it: a cell of
@@ -220,6 +177,66 @@ public class CanvasDrawer : IGameDrawer
     /// padding has to be scaled by however much the card it belongs to was.</summary>
     private double cardWidth = 1;
     private double cardHeight = 1;
+
+    /// <summary>Whichever context is being drawn into right now: the visible board, or the
+    /// off-screen copy the static part of the picture is kept on.</summary>
+    private Canvas2DContext ctx;
+
+    private readonly Canvas2DContext board;
+    private readonly Canvas2DContext cache;
+    private readonly ElementReference cacheElement;
+    private readonly Canvas2DContext heldCanvas;
+    private readonly ElementReference heldElement;
+    private readonly Canvas2DContext atlasCanvas;
+    private readonly ElementReference atlasElement;
+    private readonly Stopwatch clock = Stopwatch.StartNew();
+    private readonly Queue<double> recentDraws = new();
+
+    // Every canvas call crosses into JS, so the drawer keeps track of the context's
+    // current fill/stroke/font and skips setting a value that is already set. Cards
+    // repeat the same handful of styles dozens of times per frame.
+    private string? fillStyle;
+    private string? strokeStyle;
+    private string? font;
+    private string? textAlign;
+    private double lineWidth = -1;
+    private string rankFont = "";
+    private string tenFont = "";
+    private string courtFont = "";
+    private double lastDrawMs;
+
+    /// <summary>
+    /// Whether cards are being printed small. A card fifty pixels wide with a face scaled
+    /// down to match is a card nobody can read: the pips become dots and the index becomes a
+    /// smudge. So below that size the deck changes rather than shrinks — a jumbo index and
+    /// one large suit, which is exactly what a real deck for a small hand does. Keyed to the
+    /// card rather than to the screen, so a desktop window dragged narrow gets the same deck
+    /// a phone does at the same card size. The layout decides; this only reads it.
+    /// </summary>
+    private bool compact;
+
+    /// <summary>The game being drawn this frame. Held because the pile-level drawing has to
+    /// ask which of its cards are currently in the air somewhere else.</summary>
+    private ISolitaireView? current;
+
+    public CanvasDrawer(
+        Canvas2DContext board,
+        Canvas2DContext cache,
+        ElementReference cacheElement,
+        Canvas2DContext held,
+        ElementReference heldElement,
+        Canvas2DContext atlas,
+        ElementReference atlasElement)
+    {
+        this.board = board;
+        this.cache = cache;
+        this.cacheElement = cacheElement;
+        this.heldCanvas = held;
+        this.heldElement = heldElement;
+        this.atlasCanvas = atlas;
+        this.atlasElement = atlasElement;
+        ctx = board;
+    }
 
     /// <summary>
     /// Whether there are still faces to draw into the atlas. A solitaire board is idle
@@ -272,26 +289,7 @@ public class CanvasDrawer : IGameDrawer
         heldBottom = null;
     }
 
-    public CanvasDrawer(
-        Canvas2DContext board,
-        Canvas2DContext cache,
-        ElementReference cacheElement,
-        Canvas2DContext held,
-        ElementReference heldElement,
-        Canvas2DContext atlas,
-        ElementReference atlasElement)
-    {
-        this.board = board;
-        this.cache = cache;
-        this.cacheElement = cacheElement;
-        this.heldCanvas = held;
-        this.heldElement = heldElement;
-        this.atlasCanvas = atlas;
-        this.atlasElement = atlasElement;
-        ctx = board;
-    }
-
-    public async ValueTask Draw(Solitaire game)
+    public async ValueTask Draw(ISolitaireView game)
     {
         Board board = game.Board;
         BoardLayout layout = game.Layout;
@@ -457,9 +455,9 @@ public class CanvasDrawer : IGameDrawer
 
         // The stack under the pointer, outlined as one unit: a press takes all of it, so
         // highlighting only the card the cursor is literally over would understate the move.
-        if (drag == null && game.HoverPile is { } hovered)
+        if (drag == null && game.GrabbablePile is { } hovered)
         {
-            await DrawHover(board, layout, hovered, game.HoverIndex);
+            await DrawHover(board, layout, hovered, game.GrabbableIndex);
         }
 
         // Cards between piles. Under the held stack, which is the one thing the player is
@@ -525,6 +523,15 @@ public class CanvasDrawer : IGameDrawer
         lastDrawMs = clock.Elapsed.TotalMilliseconds - startedAt;
     }
 
+    private static string RankLabel(Rank rank) => (int)rank switch
+    {
+        1 => "A",
+        11 => "J",
+        12 => "Q",
+        13 => "K",
+        var n => n.ToString()
+    };
+
     /// <summary>
     /// Starts a batch on whichever context is current and forgets everything cached about
     /// its state. The style cache describes one context, and there are two of them.
@@ -582,9 +589,9 @@ public class CanvasDrawer : IGameDrawer
         await Fill(Felt);
         await ctx.FillRectAsync(0, 0, layout.Width, layout.Height);
 
-        foreach (var kind in Board.AllKinds)
+        foreach (var kind in Position.AllKinds)
         {
-            int pileCount = board.PileCountOf(kind);
+            int pileCount = board.Position.PileCountOf(kind);
             for (int pileIndex = 0; pileIndex < pileCount; pileIndex++)
             {
                 var loc = new Location(kind, pileIndex);
@@ -600,7 +607,7 @@ public class CanvasDrawer : IGameDrawer
     /// </summary>
     private async ValueTask DrawPile(Board board, BoardLayout layout, Location location, DragState? drag)
     {
-        var pile = board.Pile(location);
+        var pile = board.Position.Pile(location);
 
         int visibleCount = drag != null && drag.From == location
             ? Math.Min(pile.Count, drag.Index)
@@ -715,7 +722,7 @@ public class CanvasDrawer : IGameDrawer
     /// part of the position. Painted into the cached board, so a frame that is only moving a
     /// card does not repaint a speaker.
     /// </summary>
-    private async ValueTask DrawChrome(BoardLayout layout, Solitaire game)
+    private async ValueTask DrawChrome(BoardLayout layout, ISolitaireView game)
     {
         await DrawScore(layout, game.Score);
         await DrawMute(layout, game.Muted);
@@ -1098,7 +1105,7 @@ public class CanvasDrawer : IGameDrawer
     /// </summary>
     private async ValueTask DrawDropTarget(Board board, BoardLayout layout, Location loc)
     {
-        var pile = board.Pile(loc);
+        var pile = board.Position.Pile(loc);
         var card = pile.Count > 0 ? layout.CardRect(loc, pile.Count - 1) : layout.EmptySlot(loc);
         double width = Math.Max(2, card.W * 0.035);
 
@@ -1323,15 +1330,6 @@ public class CanvasDrawer : IGameDrawer
         await ctx.RestoreAsync();
     }
 
-    private static string RankLabel(Rank rank) => (int)rank switch
-    {
-        1 => "A",
-        11 => "J",
-        12 => "Q",
-        13 => "K",
-        var n => n.ToString()
-    };
-
     /// <summary>
     /// Outlines the stack a press here would pick up. One rounded rect over the whole run
     /// rather than one per card: the run moves as a unit, and a per-card outline would draw
@@ -1339,7 +1337,7 @@ public class CanvasDrawer : IGameDrawer
     /// </summary>
     private async ValueTask DrawHover(Board board, BoardLayout layout, Location loc, int index)
     {
-        var pile = board.Pile(loc);
+        var pile = board.Position.Pile(loc);
         if (index < 0 || index >= pile.Count)
         {
             return;
@@ -1434,4 +1432,6 @@ public class CanvasDrawer : IGameDrawer
             _ => TextAlign.Left,
         });
     }
+
+    private readonly record struct Pip(double Col, double Row);
 }

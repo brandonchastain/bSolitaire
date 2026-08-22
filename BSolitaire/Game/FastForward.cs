@@ -1,7 +1,7 @@
 namespace BSolitaire.Game;
 
 /// <summary>What one frame of a fast-forward did.</summary>
-public enum FastForwardTick
+internal enum FastForwardTick
 {
     /// <summary>Nothing moved — this frame was part of the gap between cards.</summary>
     Idle,
@@ -19,7 +19,7 @@ public enum FastForwardTick
 /// frame counter and a stall guard are the sort of thing that quietly accretes on whatever
 /// class is nearest.
 /// </summary>
-public sealed class FastForward
+internal sealed class FastForward
 {
     /// <summary>
     /// Frames between cards during a fast-forward. Instant would be a worse answer than fast:
@@ -73,7 +73,7 @@ public sealed class FastForward
 
         framesUntilNextCard = FramesPerCard;
 
-        int before = board.FoundationTotal;
+        int before = board.Position.FoundationTotal;
         if (!board.FastForwardStep())
         {
             IsRunning = false;
@@ -82,7 +82,7 @@ public sealed class FastForward
 
         // Turning the stock over is a step but not progress. Only cards reaching a
         // foundation reset the stall count.
-        stepsWithoutProgress = board.FoundationTotal > before ? 0 : stepsWithoutProgress + 1;
+        stepsWithoutProgress = board.Position.FoundationTotal > before ? 0 : stepsWithoutProgress + 1;
         return FastForwardTick.Advanced;
     }
 }

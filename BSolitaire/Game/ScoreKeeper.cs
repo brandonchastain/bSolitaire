@@ -5,7 +5,7 @@ namespace BSolitaire.Game;
 /// of solitaire's rules — the board plays exactly the same whether or not anyone is keeping
 /// score — so it sits outside the game and listens instead.
 /// </summary>
-public sealed class ScoreKeeper
+internal sealed class ScoreKeeper
 {
     private readonly Board board;
 
@@ -13,12 +13,12 @@ public sealed class ScoreKeeper
 
     public ScoreKeeper(Board board) => this.board = board;
 
+    /// <summary>Raised when <see cref="Score"/> has changed and is worth persisting.</summary>
+    public event Action? Changed;
+
     /// <summary>The local player's running record. The host loads it before the first frame
     /// and saves it whenever <see cref="Changed"/> fires — this only counts.</summary>
     public PlayerScore Score { get; } = new();
-
-    /// <summary>Raised when <see cref="Score"/> has changed and is worth persisting.</summary>
-    public event Action? Changed;
 
     /// <summary>Renames the player and reports the change so it gets saved.</summary>
     public void SetNickname(string nickname)
@@ -32,6 +32,14 @@ public sealed class ScoreKeeper
     public void ToggleMute()
     {
         Score.Muted = !Score.Muted;
+        Changed?.Invoke();
+    }
+
+    /// <summary>Shows the draw-time overlay, or puts it away. Saved with the record for the
+    /// same reason as the mute.</summary>
+    public void ToggleStats()
+    {
+        Score.ShowStats = !Score.ShowStats;
         Changed?.Invoke();
     }
 

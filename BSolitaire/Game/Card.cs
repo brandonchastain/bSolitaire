@@ -3,7 +3,7 @@ namespace BSolitaire.Game;
 /// <summary>
 /// A standard playing card.
 /// </summary>
-public class Card
+internal class Card
 {
     private bool isFaceUp = false;
 

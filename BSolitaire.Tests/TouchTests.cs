@@ -14,15 +14,6 @@ public class TouchTests
     private const double Width = 390;
     private const double Height = 844;
 
-    private static (Board Board, BoardLayout Layout, PointerInput Input) Table()
-    {
-        var board = Empty();
-        var layout = new BoardLayout(Width, Height);
-        return (board, layout, new PointerInput(board, layout));
-    }
-
-    private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
-
     [Fact]
     public void ATouchedStackRidesAboveTheFinger()
     {
@@ -35,7 +26,7 @@ public class TouchTests
         // of the board, so it accepts the card whether the lift is a quarter of a card, half
         // of one, or nothing at all. A foundation covers its own slot and no more.
         var (board, layout, input) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Ace));
 
         var grab = layout.CardRect(Tableau(0), 0);
         var slot = layout.EmptySlot(Foundation(0));
@@ -49,8 +40,8 @@ public class TouchTests
         input.Move(x, y);
         input.Up(x, y);
 
-        Assert.Empty(board.TableauPiles[0]);
-        Assert.Single(board.FoundationPiles[0]);
+        Assert.Empty(board.Position.TableauPiles[0]);
+        Assert.Single(board.Position.FoundationPiles[0]);
     }
 
     [Fact]
@@ -65,7 +56,7 @@ public class TouchTests
         // finger on the slot's top edge is carrying a card that has overshot it entirely once
         // the lift passes a quarter of a card.
         var (board, layout, input) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Ace));
 
         var grab = layout.CardRect(Tableau(0), 0);
         var slot = layout.EmptySlot(Foundation(0));
@@ -77,7 +68,7 @@ public class TouchTests
         input.Move(x, y);
         input.Up(x, y);
 
-        Assert.Single(board.FoundationPiles[0]);
+        Assert.Single(board.Position.FoundationPiles[0]);
     }
 
     [Fact]
@@ -85,8 +76,8 @@ public class TouchTests
     {
         // The same drag with a mouse: no lift, so aiming half a card low misses.
         var (board, layout, input) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         var from = Centre(layout.CardRect(Tableau(0), 0));
         var target = Centre(layout.CardRect(Tableau(1), 0));
@@ -95,8 +86,8 @@ public class TouchTests
         input.Move(target.X, target.Y);
         input.Up(target.X, target.Y);
 
-        Assert.Empty(board.TableauPiles[0]);
-        Assert.Equal(2, board.TableauPiles[1].Count);
+        Assert.Empty(board.Position.TableauPiles[0]);
+        Assert.Equal(2, board.Position.TableauPiles[1].Count);
     }
 
     [Fact]
@@ -105,10 +96,10 @@ public class TouchTests
         // A touch screen has no hover, so this is the only way the board can answer "does
         // this go here?" before the player has committed to an answer of their own.
         var (board, layout, input) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
-        board.TableauPiles[2].Add(Up(Suit.Clubs, Rank.Ten));
-        board.TableauPiles[3].Add(Up(Suit.Diamonds, Rank.Four));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(2), Up(Suit.Clubs, Rank.Ten));
+        board.Position.Place(Tableau(3), Up(Suit.Diamonds, Rank.Four));
 
         var from = Centre(layout.CardRect(Tableau(0), 0));
         input.Down(from.X, from.Y, touch: true);
@@ -131,8 +122,8 @@ public class TouchTests
         // The offer and the drop have to be the same question, or the board lights up a
         // column and then refuses the card put on it.
         var (board, layout, input) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
-        board.FoundationPiles[1].Add(Up(Suit.Hearts, Rank.Two));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Ace));
+        board.Position.Place(Foundation(1), Up(Suit.Hearts, Rank.Two));
 
         var from = Centre(layout.CardRect(Tableau(0), 0));
         input.Down(from.X, from.Y, touch: true);
@@ -140,7 +131,7 @@ public class TouchTests
 
         foreach (var target in input.DropTargets)
         {
-            Assert.True(Rules.IsLegal(board, new Move(Tableau(0), target, 1)),
+            Assert.True(Rules.IsLegal(board.Position, new Move(Tableau(0), target, 1)),
                 $"{target} was offered but would refuse the card");
         }
 
@@ -153,8 +144,8 @@ public class TouchTests
     public void TheOfferGoesAwayWhenTheStackIsPutDown()
     {
         var (board, layout, input) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         var from = Centre(layout.CardRect(Tableau(0), 0));
         input.Down(from.X, from.Y, touch: true);
@@ -173,27 +164,27 @@ public class TouchTests
         // and a player who has already tapped a card once has exactly the right idea of what
         // tapping it again should mean.
         var (board, layout, input) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Ace));
 
         var at = Centre(layout.CardRect(Tableau(0), 0));
 
         input.Down(at.X, at.Y, touch: true);
         input.Up(at.X, at.Y);
-        Assert.Single(board.TableauPiles[0]); // selected, not moved
+        Assert.Single(board.Position.TableauPiles[0]); // selected, not moved
 
         input.Down(at.X, at.Y, touch: true);
         input.Up(at.X, at.Y);
 
-        Assert.Empty(board.TableauPiles[0]);
-        Assert.Equal(Rank.Ace, board.FoundationPiles[(int)Suit.Hearts][0].Rank);
+        Assert.Empty(board.Position.TableauPiles[0]);
+        Assert.Equal(Rank.Ace, board.Position.FoundationPiles[(int)Suit.Hearts][0].Rank);
     }
 
     [Fact]
     public void TappingACardWithNoHomeTwiceJustPutsItDown()
     {
         var (board, layout, input) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         var at = Centre(layout.CardRect(Tableau(0), 0));
 
@@ -202,7 +193,7 @@ public class TouchTests
         input.Down(at.X, at.Y, touch: true);
         input.Up(at.X, at.Y);
 
-        Assert.Single(board.TableauPiles[0]);
+        Assert.Single(board.Position.TableauPiles[0]);
 
         // Put down, not still held: a tap on the ten now selects the ten rather than moving
         // the nine onto it.
@@ -210,8 +201,8 @@ public class TouchTests
         input.Down(ten.X, ten.Y, touch: true);
         input.Up(ten.X, ten.Y);
 
-        Assert.Single(board.TableauPiles[0]);
-        Assert.Single(board.TableauPiles[1]);
+        Assert.Single(board.Position.TableauPiles[0]);
+        Assert.Single(board.Position.TableauPiles[1]);
     }
 
     [Fact]
@@ -220,8 +211,8 @@ public class TouchTests
         // Foundations take one card at a time, so a run of two has nowhere to go — and the
         // second tap must not quietly send the top card of it instead.
         var (board, layout, input) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Spades, Rank.Two));
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Ace));
+        board.Position.Place(Tableau(0), Up(Suit.Spades, Rank.Two));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Ace));
 
         var at = layout.CardRect(Tableau(0), 0);
         double x = at.X + at.W / 2;
@@ -232,7 +223,7 @@ public class TouchTests
         input.Down(x, y, touch: true);
         input.Up(x, y);
 
-        Assert.Equal(2, board.TableauPiles[0].Count);
+        Assert.Equal(2, board.Position.TableauPiles[0].Count);
     }
 
     [Fact]
@@ -240,8 +231,8 @@ public class TouchTests
     {
         // The shortcut must not have cost the board the two-tap move it is built on.
         var (board, layout, input) = Table();
-        board.TableauPiles[0].Add(Up(Suit.Hearts, Rank.Nine));
-        board.TableauPiles[1].Add(Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         var nine = Centre(layout.CardRect(Tableau(0), 0));
         var ten = Centre(layout.CardRect(Tableau(1), 0));
@@ -251,7 +242,16 @@ public class TouchTests
         input.Down(ten.X, ten.Y, touch: true);
         input.Up(ten.X, ten.Y);
 
-        Assert.Empty(board.TableauPiles[0]);
-        Assert.Equal(2, board.TableauPiles[1].Count);
+        Assert.Empty(board.Position.TableauPiles[0]);
+        Assert.Equal(2, board.Position.TableauPiles[1].Count);
     }
+
+    private static (Board Board, BoardLayout Layout, PointerInput Input) Table()
+    {
+        var board = Empty();
+        var layout = new BoardLayout(Width, Height);
+        return (board, layout, new PointerInput(board, layout));
+    }
+
+    private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
 }

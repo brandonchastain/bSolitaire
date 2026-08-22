@@ -10,19 +10,6 @@ namespace BSolitaire.Tests;
 /// </summary>
 public class SolverTests
 {
-    /// <summary>Runs a search to the end. Generous, because these are not frame-budget tests.</summary>
-    private static SolveResult Solve(Board board)
-    {
-        var solver = new Solver(board);
-
-        while (!solver.Done)
-        {
-            solver.Step(1_000_000, TimeSpan.FromSeconds(10));
-        }
-
-        return solver.Result;
-    }
-
     [Fact]
     public void ABoardOneMoveFromDoneIsWinnable()
     {
@@ -42,7 +29,7 @@ public class SolverTests
     [Fact]
     public void TheSearchReportsWhatItHasLookedAt()
     {
-        var solver = new Solver(new Board());
+        var solver = new Solver(new Board().Position);
         solver.Step(5000, TimeSpan.FromSeconds(1));
 
         Assert.True(solver.Nodes > 0);
@@ -56,13 +43,13 @@ public class SolverTests
         // watch the board play itself while they were still deciding.
         var board = new Board();
         int version = board.Version;
-        var before = board.TableauPiles.Select(pile => pile.Count).ToArray();
+        var before = board.Position.TableauPiles.Select(pile => pile.Count).ToArray();
 
-        var solver = new Solver(board);
+        var solver = new Solver(board.Position);
         solver.Step(50_000, TimeSpan.FromSeconds(2));
 
         Assert.Equal(version, board.Version);
-        Assert.Equal(before, board.TableauPiles.Select(pile => pile.Count).ToArray());
+        Assert.Equal(before, board.Position.TableauPiles.Select(pile => pile.Count).ToArray());
     }
 
     [Fact]
@@ -81,5 +68,18 @@ public class SolverTests
         {
             Assert.True(Rules.CanFound(Up(suit, Rank.King), Up(suit, Rank.Queen)));
         }
+    }
+
+    /// <summary>Runs a search to the end. Generous, because these are not frame-budget tests.</summary>
+    private static SolveResult Solve(Board board)
+    {
+        var solver = new Solver(board.Position);
+
+        while (!solver.Done)
+        {
+            solver.Step(1_000_000, TimeSpan.FromSeconds(10));
+        }
+
+        return solver.Result;
     }
 }

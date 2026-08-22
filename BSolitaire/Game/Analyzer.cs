@@ -6,8 +6,15 @@ namespace BSolitaire.Game;
 /// reached, only that one eventually arrives, and the search does not care which frame it is
 /// running in. Splitting the two out means neither has to hold the other's bookkeeping.
 /// </summary>
-public sealed class Analyzer
+internal sealed class Analyzer
 {
+    /// <summary>
+    /// A ceiling on positions per frame as well, so a machine fast enough to burn the whole
+    /// node budget inside four milliseconds still spreads the work out rather than doing it
+    /// all in one frame.
+    /// </summary>
+    private const int SearchSlice = 8000;
+
     /// <summary>
     /// How long the search may run inside one frame. This is the number that decides whether
     /// the board feels responsive: everything here shares a thread, so whatever the search
@@ -16,13 +23,6 @@ public sealed class Analyzer
     /// phone as on a desktop — slow hardware takes more frames rather than dropping them.
     /// </summary>
     private static readonly TimeSpan SearchBudget = TimeSpan.FromMilliseconds(4);
-
-    /// <summary>
-    /// A ceiling on positions per frame as well, so a machine fast enough to burn the whole
-    /// node budget inside four milliseconds still spreads the work out rather than doing it
-    /// all in one frame.
-    /// </summary>
-    private const int SearchSlice = 8000;
 
     private readonly Board board;
 
@@ -36,9 +36,6 @@ public sealed class Analyzer
 
     /// <summary>Positions the search has examined on the current board.</summary>
     public int Nodes => solver?.Nodes ?? 0;
-
-    /// <summary>Distinct positions the search is holding on to.</summary>
-    public int States => solver?.States ?? 0;
 
     /// <summary>
     /// Gives the search its slice of one frame, and reports whether the board changed as a
@@ -59,7 +56,7 @@ public sealed class Analyzer
         if (analysedVersion != board.Version)
         {
             analysedVersion = board.Version;
-            solver = board.State == GameState.Playing ? new Solver(board) : null;
+            solver = board.State == GameState.Playing ? new Solver(board.Position) : null;
         }
 
         if (paused || solver == null || solver.Done)
