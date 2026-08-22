@@ -58,9 +58,9 @@ public class PiecesTests
         // from a position that offers the button, but a loop that never ends is a worse bug
         // than one card left unplayed.
         var board = Empty();
-        board.Mutable(Stock).Add(Down(Suit.Hearts, Rank.Five));  // nothing it can ever go on
-        board.Mutable(Tableau(0)).Add(Up(Suit.Spades, Rank.King));
-        board.Mutable(Tableau(1)).Add(Up(Suit.Hearts, Rank.Queen)); // a move exists, so not stuck
+        board.Place(Stock, Down(Suit.Hearts, Rank.Five));  // nothing it can ever go on
+        board.Place(Tableau(0), Up(Suit.Spades, Rank.King));
+        board.Place(Tableau(1), Up(Suit.Hearts, Rank.Queen)); // a move exists, so not stuck
 
         var fastForward = new FastForward(board);
         fastForward.Start();
@@ -151,9 +151,9 @@ public class PiecesTests
         // to still be in play for it to be worth searching at all — a board already known to
         // be stuck is not news anyone needs a proof of.
         var board = Empty();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Spades, Rank.King));
-        board.Mutable(Tableau(1)).Add(Up(Suit.Hearts, Rank.Queen));
-        board.Mutable(Stock).Add(Down(Suit.Diamonds, Rank.Ace)); // an ace can always go home
+        board.Place(Tableau(0), Up(Suit.Spades, Rank.King));
+        board.Place(Tableau(1), Up(Suit.Hearts, Rank.Queen));
+        board.Place(Stock, Down(Suit.Diamonds, Rank.Ace)); // an ace can always go home
         board.DealFromStock();
         Assert.Equal(GameState.Playing, board.State);
 
@@ -224,13 +224,13 @@ public class PiecesTests
             for (int i = 0; i < board.PileCountOf(kind); i++)
             {
                 var loc = new Location(kind, i);
-                board.Mutable(loc).Clear();
-                board.Mutable(loc).AddRange(second.Pile(loc));
+                board.Strip(loc);
+                board.Place(loc, second.Pile(loc));
             }
         }
 
-        board.Mutable(Stock).Clear();
-        board.Mutable(Waste).Clear();
+        board.Strip(Stock);
+        board.Strip(Waste);
 
         while (board.State == GameState.Playing)
         {
@@ -246,8 +246,8 @@ public class PiecesTests
     public void ALostDealCountsAsAGameOnly()
     {
         var board = Empty();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.King));
-        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Queen));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        board.Place(Tableau(1), Up(Suit.Spades, Rank.Queen));
         board.MakeMove(new Move(Tableau(1), Tableau(0), 1));
 
         var scores = new ScoreKeeper(board);

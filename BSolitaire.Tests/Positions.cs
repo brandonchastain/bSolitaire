@@ -24,22 +24,8 @@ public static class Positions
     public static Board Empty()
     {
         var board = new Board();
-        ClearAll(board);
+        board.Strip();
         return board;
-    }
-
-    /// <summary>Takes every card off a board that has already been dealt. Tests that need a
-    /// live <see cref="Solitaire"/> cannot start from <see cref="Empty"/>, so they clear the
-    /// board it dealt instead.</summary>
-    public static void ClearAll(Board board)
-    {
-        foreach (var kind in Board.AllKinds)
-        {
-            for (int i = 0; i < board.PileCountOf(kind); i++)
-            {
-                board.Mutable(new Location(kind, i)).Clear();
-            }
-        }
     }
 
     /// <summary>
@@ -57,10 +43,10 @@ public static class Positions
 
             for (int rank = (int)Rank.Ace; rank <= (int)Rank.Queen; rank++)
             {
-                board.Mutable(Foundation(i)).Add(Up(suit, (Rank)rank));
+                board.Place(Foundation(i), Up(suit, (Rank)rank));
             }
 
-            board.Mutable(Tableau(i)).Add(Up(suit, Rank.King));
+            board.Place(Tableau(i), Up(suit, Rank.King));
         }
 
         return board;

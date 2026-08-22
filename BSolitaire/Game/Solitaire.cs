@@ -10,8 +10,12 @@ namespace BSolitaire.Game;
 /// carrying out the handful of commands the player can ask for, and telling the host the two
 /// things it needs to know — whether the picture is out of date, and whether anything blew up.
 /// It knows nothing about Blazor, canvas, or JS, so it stays unit-testable.
+///
+/// The class is internal: this is an application, not a library, and nothing outside the
+/// assembly has any business holding a game. That is what lets the members below be public —
+/// <see cref="ISolitaireView"/> requires it — without any of them becoming public API.
 /// </summary>
-public sealed class Solitaire
+internal sealed class Solitaire : ISolitaireView
 {
     private readonly Controls controls;
     private readonly Analyzer analyzer;
@@ -37,7 +41,7 @@ public sealed class Solitaire
         cascade = new WinCascade(Board, Layout);
     }
 
-    internal Board Board { get; }
+    public Board Board { get; }
 
     public BoardLayout Layout { get; }
 
@@ -53,23 +57,23 @@ public sealed class Solitaire
     }
 
     /// <summary>The stack currently held by the pointer, or null.</summary>
-    internal DragState? Drag => controls.Drag;
+    public DragState? Drag => controls.Drag;
 
     /// <summary>Cards part-way between two piles, to be painted over the board.</summary>
-    internal IReadOnlyList<CardInFlight> InFlight => animator.InFlight;
+    public IReadOnlyList<CardInFlight> InFlight => animator.InFlight;
 
     /// <summary>
     /// The index from which a pile must not be drawn, because the cards above it are still
     /// in the air on their way to it.
     /// </summary>
-    internal int HiddenFrom(Location loc) => animator.HiddenFrom(loc);
+    public int HiddenFrom(Location loc) => animator.HiddenFrom(loc);
 
     /// <summary>Piles that would accept the stack being dragged. Empty unless one is held —
     /// this is the touch answer to a hover, which a finger cannot do.</summary>
-    internal IReadOnlyList<Location> DropTargets => controls.DropTargets;
+    public IReadOnlyList<Location> DropTargets => controls.DropTargets;
 
     /// <summary>Cards bouncing down the board after a win.</summary>
-    internal IReadOnlyList<FallingCard> Falling => cascade.Falling;
+    public IReadOnlyList<FallingCard> Falling => cascade.Falling;
 
     /// <summary>
     /// Whether there is a move to take back, and so whether the button is drawn. Unaffected
@@ -77,7 +81,7 @@ public sealed class Solitaire
     /// button anyway, and blinking the button out for the duration is both a flicker and a
     /// repaint of a corner of the board that had no reason to change.
     /// </summary>
-    internal bool CanUndo => Board.CanUndo && !fastForward.IsRunning;
+    public bool CanUndo => Board.CanUndo && !fastForward.IsRunning;
 
     /// <summary>
     /// Whether the end-of-game panel is up. A won game holds it back until the cards have
@@ -85,21 +89,25 @@ public sealed class Solitaire
     /// instant it starts is asking the player what they want next before they have seen what
     /// they got.
     /// </summary>
-    internal bool ShowBanner => State != GameState.Playing && !cascade.IsRunning;
+    public bool ShowBanner => State != GameState.Playing && !cascade.IsRunning;
 
-    /// <summary>The pile the pointer is resting on and could pick up from, or null. Hidden
-    /// while the board is playing itself out — nothing there is grabbable.</summary>
-    internal Location? HoverPile => fastForward.IsRunning ? null : controls.HoverPile;
+    /// <summary>
+    /// The pile the pointer could pick up from right now, or null if it could not pick up
+    /// anything. Not the same as what the pointer is over: while the board is playing itself
+    /// out nothing is grabbable, however the pointer is resting. <see cref="Controls"/> keeps
+    /// the plain hover; the fast-forward is what this class knows and it does not.
+    /// </summary>
+    public Location? GrabbablePile => fastForward.IsRunning ? null : controls.HoverPile;
 
-    /// <summary>Index of the lowest card the pointer would pick up from
-    /// <see cref="HoverPile"/>.</summary>
-    internal int HoverIndex => controls.HoverIndex;
+    /// <summary>Index of the lowest card that would come up from
+    /// <see cref="GrabbablePile"/>, or -1 when there is no such pile.</summary>
+    public int GrabbableIndex => GrabbablePile == null ? -1 : controls.HoverIndex;
 
     /// <summary>Whether the game is still going, and if not, how it ended.</summary>
     public GameState State => Board.State;
 
     /// <summary>Last unhandled exception, painted on the board. Null when all is well.</summary>
-    internal string? Error { get; private set; }
+    public string? Error { get; private set; }
 
     /// <summary>
     /// True when the picture is out of date. A solitaire board is static almost all the
@@ -112,11 +120,11 @@ public sealed class Solitaire
     /// Whether the board is offering to play the rest of the game out. False while it is
     /// already doing so — the offer and the act are never both on screen.
     /// </summary>
-    internal bool CanFastForward => Board.CanFastForward && !fastForward.IsRunning && Drag == null;
+    public bool CanFastForward => Board.CanFastForward && !fastForward.IsRunning && Drag == null;
 
     /// <summary>Whether the draw-time overlay is shown. Toggled with F, and saved with the
     /// score.</summary>
-    internal bool ShowStats => Score.ShowStats;
+    public bool ShowStats => Score.ShowStats;
 
     /// <summary>
     /// Noises the board has asked for since the host last drained them. Nothing here makes a
@@ -130,10 +138,10 @@ public sealed class Solitaire
     public bool Muted => Score.Muted;
 
     /// <summary>How the search on the current position is going.</summary>
-    internal SolveResult Analysis => analyzer.Result;
+    public SolveResult Analysis => analyzer.Result;
 
     /// <summary>Positions the search has examined on the current board.</summary>
-    internal int AnalysisNodes => analyzer.Nodes;
+    public int AnalysisNodes => analyzer.Nodes;
 
     /// <summary>Called by the host once the current picture has been drawn.</summary>
     public void MarkClean()

@@ -263,11 +263,48 @@ public class Board
     public IReadOnlyList<Card> Pile(Location loc) => Mutable(loc);
 
     /// <summary>
-    /// The same pile, writable. The board moves cards through here, and tests arrange a
-    /// position with it; nothing outside the assembly can reach it, so the bookkeeping around
-    /// a move cannot be skipped by accident.
+    /// Puts cards on a pile, on top of whatever is already there. This is how a position is
+    /// arranged rather than played — the tests use it to say what a board starts as, and it
+    /// deliberately does none of what <see cref="MakeMove"/> does, because nothing has moved.
+    /// The whole board is marked for repaint on the way out, since a position put down by
+    /// hand is not a change anyone can name the piles for.
     /// </summary>
-    internal List<Card> Mutable(Location loc) => loc.Kind switch
+    internal void Place(Location loc, params Card[] cards) => Place(loc, (IEnumerable<Card>)cards);
+
+    /// <inheritdoc cref="Place(Location, Card[])"/>
+    internal void Place(Location loc, IEnumerable<Card> cards)
+    {
+        Mutable(loc).AddRange(cards);
+        AllDirty = true;
+    }
+
+    /// <summary>Takes every card off the board, leaving thirteen empty piles. The counterpart
+    /// to <see cref="Place"/>: a test says what it wants on the board by clearing what the
+    /// deal put there and putting down only the cards its rule is about.</summary>
+    internal void Strip()
+    {
+        foreach (var kind in AllKinds)
+        {
+            for (int i = 0; i < PileCountOf(kind); i++)
+            {
+                Strip(new Location(kind, i));
+            }
+        }
+    }
+
+    /// <summary>Takes every card off one pile.</summary>
+    internal void Strip(Location loc)
+    {
+        Mutable(loc).Clear();
+        AllDirty = true;
+    }
+
+    /// <summary>
+    /// The same pile, writable. Private on purpose: moving a card is never only a splice —
+    /// see <see cref="MakeMove"/> for the five other things that go with it — so nothing
+    /// outside this class gets to hold a pile it could edit.
+    /// </summary>
+    private List<Card> Mutable(Location loc) => loc.Kind switch
     {
         PileKind.FaceDown => faceDown,
         PileKind.FaceUp => faceUp,

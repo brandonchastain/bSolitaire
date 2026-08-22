@@ -54,8 +54,8 @@ public class PointerTests
     public void DraggingACardOntoALegalPileMovesIt()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
-        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Ten));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         DragCard(input, Grab(layout, Tableau(0), 0), Grab(layout, Tableau(1), 0));
 
@@ -67,8 +67,8 @@ public class PointerTests
     public void DraggingOntoAnIllegalPileSnapsBack()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
-        board.Mutable(Tableau(1)).Add(Up(Suit.Diamonds, Rank.Ten)); // same colour
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Place(Tableau(1), Up(Suit.Diamonds, Rank.Ten)); // same colour
 
         DragCard(input, Grab(layout, Tableau(0), 0), Grab(layout, Tableau(1), 0));
 
@@ -81,9 +81,9 @@ public class PointerTests
     public void AWholeRunComesUpTogether()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Spades, Rank.Ten));
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
-        board.Mutable(Tableau(1)).Add(Up(Suit.Diamonds, Rank.Jack));
+        board.Place(Tableau(0), Up(Suit.Spades, Rank.Ten));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Place(Tableau(1), Up(Suit.Diamonds, Rank.Jack));
 
         DragCard(input, Grab(layout, Tableau(0), 0), Grab(layout, Tableau(1), 0));
 
@@ -95,9 +95,9 @@ public class PointerTests
     public void AFaceDownCardIsNotPickedUpAtAll()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Down(Suit.Hearts, Rank.Nine));
-        board.Mutable(Tableau(0)).Add(Up(Suit.Clubs, Rank.Three));
-        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Ten));
+        board.Place(Tableau(0), Down(Suit.Hearts, Rank.Nine));
+        board.Place(Tableau(0), Up(Suit.Clubs, Rank.Three));
+        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         input.Down(Grab(layout, Tableau(0), 0).X, Grab(layout, Tableau(0), 0).Y);
         input.Move(Grab(layout, Tableau(1), 0).X, Grab(layout, Tableau(1), 0).Y);
@@ -109,7 +109,7 @@ public class PointerTests
     public void APressThatBarelyMovesIsATapRatherThanADrag()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
         var (x, y) = Grab(layout, Tableau(0), 0);
 
         input.Down(x, y);
@@ -122,8 +122,8 @@ public class PointerTests
     public void ACancelledDragLeavesTheCardsWhereTheyWere()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
-        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Ten));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
         var (x, y) = Grab(layout, Tableau(0), 0);
 
         input.Down(x, y);
@@ -139,7 +139,7 @@ public class PointerTests
     public void TappingTheStockTurnsACardOver()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Stock).Add(Down(Suit.Hearts, Rank.Nine));
+        board.Place(Stock, Down(Suit.Hearts, Rank.Nine));
 
         Tap(input, Grab(layout, Stock, 0));
 
@@ -151,7 +151,7 @@ public class PointerTests
     public void TappingAnEmptyStockTurnsTheWasteBackOver()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Waste).Add(Up(Suit.Hearts, Rank.Nine));
+        board.Place(Waste, Up(Suit.Hearts, Rank.Nine));
 
         Tap(input, Centre(layout.EmptySlot(Stock)));
 
@@ -165,8 +165,8 @@ public class PointerTests
     {
         // The touch-friendly second mode: pick a card, then pick where it goes.
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
-        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Ten));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         Tap(input, Grab(layout, Tableau(0), 0));
         Tap(input, Grab(layout, Tableau(1), 0));
@@ -181,9 +181,9 @@ public class PointerTests
         // The bug this suite exists for, reached the way a player would reach it: the nine is
         // face down and would stack on the ten, and tapping it used to pick it up regardless.
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Down(Suit.Hearts, Rank.Nine));
-        board.Mutable(Tableau(0)).Add(Up(Suit.Clubs, Rank.Three));
-        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Ten));
+        board.Place(Tableau(0), Down(Suit.Hearts, Rank.Nine));
+        board.Place(Tableau(0), Up(Suit.Clubs, Rank.Three));
+        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         Tap(input, Grab(layout, Tableau(0), 0));
         Tap(input, Grab(layout, Tableau(1), 0));
@@ -196,8 +196,8 @@ public class PointerTests
     public void ATapOnBareFeltCancelsASelection()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
-        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Ten));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         Tap(input, Grab(layout, Tableau(0), 0));
         Tap(input, (Width - 4, Height / 2)); // nothing out there
@@ -211,8 +211,8 @@ public class PointerTests
     public void TappingTheSelectionAgainPutsItDown()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
-        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Ten));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         Tap(input, Grab(layout, Tableau(0), 0));
         Tap(input, Grab(layout, Tableau(0), 0)); // deselects rather than refusing a self-move
@@ -227,7 +227,7 @@ public class PointerTests
     public void TapToMoveOntoAnEmptyColumnStillWorks()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Spades, Rank.King));
+        board.Place(Tableau(0), Up(Suit.Spades, Rank.King));
 
         Tap(input, Grab(layout, Tableau(0), 0));
         Tap(input, Centre(layout.EmptySlot(Tableau(3))));
@@ -240,7 +240,7 @@ public class PointerTests
     public void TapToMoveSendsACardToAFoundation()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Ace));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Ace));
 
         Tap(input, Grab(layout, Tableau(0), 0));
         Tap(input, Centre(layout.EmptySlot(Foundation(2))));
@@ -253,9 +253,9 @@ public class PointerTests
     public void ADragDoesNotLeaveASelectionBehind()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
-        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Ten));
-        board.Mutable(Tableau(2)).Add(Up(Suit.Clubs, Rank.King));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
+        board.Place(Tableau(2), Up(Suit.Clubs, Rank.King));
 
         Tap(input, Grab(layout, Tableau(0), 0));                                  // select the nine
         DragCard(input, Grab(layout, Tableau(2), 0), Centre(layout.EmptySlot(Tableau(5)))); // drag the king
@@ -270,7 +270,7 @@ public class PointerTests
     public void TappingACardTwiceSendsItHome()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Ace));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Ace));
         var at = Grab(layout, Tableau(0), 0);
 
         Tap(input, at);
@@ -283,7 +283,7 @@ public class PointerTests
     public void TappingACardWithNoFoundationTwiceDoesNothing()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Five));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Five));
         var at = Grab(layout, Tableau(0), 0);
 
         Tap(input, at);
@@ -299,8 +299,8 @@ public class PointerTests
         // Foundations take one card at a time, so a run has nowhere to go — and the second
         // tap must not quietly send the top of it instead.
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Ace));
-        board.Mutable(Tableau(0)).Add(Up(Suit.Clubs, Rank.Three));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Ace));
+        board.Place(Tableau(0), Up(Suit.Clubs, Rank.Three));
         var at = Grab(layout, Tableau(0), 0);
 
         Tap(input, at);
@@ -321,9 +321,9 @@ public class PointerTests
         // Taps are the only route now. Four of them in a row are two separate moves, which
         // is what four taps are, and never three cards for two.
         var (board, layout, input) = Table();
-        board.Mutable(Foundation(0)).Add(Up(Suit.Hearts, Rank.Ace));
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Three));
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Two));
+        board.Place(Foundation(0), Up(Suit.Hearts, Rank.Ace));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Three));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Two));
 
         Tap(input, Grab(layout, Tableau(0), 1));
         Tap(input, Grab(layout, Tableau(0), 1));
@@ -339,8 +339,8 @@ public class PointerTests
         // The highlight shows the grab point rather than the card under the cursor, because
         // what the player wants to know is what is about to come up.
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Spades, Rank.Ten));
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
+        board.Place(Tableau(0), Up(Suit.Spades, Rank.Ten));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
 
         var (x, y) = Grab(layout, Tableau(0), 0);
         Assert.True(input.Move(x, y));
@@ -353,7 +353,7 @@ public class PointerTests
     public void HoveringOverSomethingUngrabbableHighlightsNothing()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Stock).Add(Down(Suit.Hearts, Rank.Nine));
+        board.Place(Stock, Down(Suit.Hearts, Rank.Nine));
 
         var (x, y) = Grab(layout, Stock, 0);
         input.Move(x, y);
@@ -365,7 +365,7 @@ public class PointerTests
     public void HoveringWithinTheSameCardIsNotWorthARedraw()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.Nine));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
         var (x, y) = Grab(layout, Tableau(0), 0);
 
         Assert.True(input.Move(x, y));    // crossed into it
@@ -377,8 +377,8 @@ public class PointerTests
     {
         // The panel is on top once the game is over, so nothing beneath it is grabbable.
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.King));
-        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Queen));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        board.Place(Tableau(1), Up(Suit.Spades, Rank.Queen));
         board.MakeMove(new Move(Tableau(1), Tableau(0), 1));
         Assert.Equal(GameState.Stuck, board.State);
 
@@ -393,8 +393,8 @@ public class PointerTests
     public void TheBannersButtonDealsAgain()
     {
         var (board, layout, input) = Table();
-        board.Mutable(Tableau(0)).Add(Up(Suit.Hearts, Rank.King));
-        board.Mutable(Tableau(1)).Add(Up(Suit.Spades, Rank.Queen));
+        board.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        board.Place(Tableau(1), Up(Suit.Spades, Rank.Queen));
         board.MakeMove(new Move(Tableau(1), Tableau(0), 1));
 
         Tap(input, Centre(layout.NewGameButton));
