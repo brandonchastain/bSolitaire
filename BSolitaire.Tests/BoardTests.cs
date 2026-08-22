@@ -210,7 +210,7 @@ public class BoardTests
     public void TheBoardOffersToFinishOnceNothingIsFaceDown()
     {
         var board = FourKingsFromDone();
-        board.MakeMove(new Move(Tableau(0), Foundation(0), 1));
+        board.Settle();
 
         Assert.True(board.CanFastForward);
     }

@@ -3,7 +3,7 @@ namespace BSolitaire.Game;
 /// <summary>
 /// Holds the cards, piles, and state of the Solitaire game.
 /// </summary>
-public class Board
+public partial class Board
 {
     /// <summary>Every pile kind. Cached because Enum.GetValues allocates, and the
     /// draw loop and hit test both walk this on every frame and every pointer event.</summary>
@@ -263,51 +263,10 @@ public class Board
     public IReadOnlyList<Card> Pile(Location loc) => Mutable(loc);
 
     /// <summary>
-    /// Puts cards on a pile, on top of whatever is already there. This is how a position is
-    /// arranged rather than played — the tests use it to say what a board starts as — and it
-    /// deliberately does none of what <see cref="MakeMove"/> does: there is no undo step to
-    /// record, no motion to animate, and no sound to play, because nothing moved. The pile it
-    /// touched is marked for repaint, which is the one thing a card appearing does share with
-    /// a card arriving.
-    /// </summary>
-    internal void Place(Location loc, params Card[] cards) => Place(loc, (IEnumerable<Card>)cards);
-
-    /// <inheritdoc cref="Place(Location, Card[])"/>
-    internal void Place(Location loc, IEnumerable<Card> cards)
-    {
-        Mutable(loc).AddRange(cards);
-        MarkDirty(loc);
-    }
-
-    /// <summary>Takes every card off the board, leaving thirteen empty piles. The counterpart
-    /// to <see cref="Place"/>: a test says what it wants on the board by clearing what the
-    /// deal put there and putting down only the cards its rule is about. This is the one
-    /// arrangement broad enough to be worth <see cref="AllDirty"/> rather than naming piles.
-    /// </summary>
-    internal void Strip()
-    {
-        foreach (var kind in AllKinds)
-        {
-            for (int i = 0; i < PileCountOf(kind); i++)
-            {
-                Mutable(new Location(kind, i)).Clear();
-            }
-        }
-
-        AllDirty = true;
-    }
-
-    /// <summary>Takes every card off one pile.</summary>
-    internal void Strip(Location loc)
-    {
-        Mutable(loc).Clear();
-        MarkDirty(loc);
-    }
-
-    /// <summary>
     /// The same pile, writable. Private on purpose: moving a card is never only a splice —
     /// see <see cref="MakeMove"/> for the five other things that go with it — so nothing
-    /// outside this class gets to hold a pile it could edit.
+    /// outside this class gets to hold a pile it could edit. The tests need to put a position
+    /// down by hand and so reach this too; that half of the class is in Board.Testing.cs.
     /// </summary>
     private List<Card> Mutable(Location loc) => loc.Kind switch
     {
