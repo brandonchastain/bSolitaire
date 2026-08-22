@@ -10,7 +10,7 @@ namespace BSolitaire.Game;
 /// belong to the same player and ride along on the same write: a second localStorage key for
 /// two bools would be more machinery than the facts deserve.
 /// </summary>
-public sealed class PlayerScore
+internal sealed class PlayerScore
 {
     public string Nickname { get; set; } = "";
 
@@ -27,4 +27,19 @@ public sealed class PlayerScore
     [JsonIgnore]
     public string Summary =>
         $"{(string.IsNullOrWhiteSpace(Nickname) ? "Player" : Nickname)}   Games: {Games}   Wins: {Wins}";
+
+    /// <summary>
+    /// Takes on everything a stored record holds. The game keeps one score object for its
+    /// lifetime and hands the same reference to the host and the board, so a loaded record is
+    /// copied in rather than swapped for. Field by field, and deliberately next to the fields:
+    /// this is what a new property has to be added to, and the last one was not.
+    /// </summary>
+    public void CopyFrom(PlayerScore other)
+    {
+        Nickname = other.Nickname;
+        Games = other.Games;
+        Wins = other.Wins;
+        Muted = other.Muted;
+        ShowStats = other.ShowStats;
+    }
 }
