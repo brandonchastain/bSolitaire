@@ -330,7 +330,7 @@ internal sealed class PointerInput
             return false;
         }
 
-        if (board.FoundationFor(pile[^1]) is not { } dest)
+        if (Rules.FoundationFor(board.Position, pile[^1]) is not { } dest)
         {
             return false;
         }

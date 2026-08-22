@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace BSolitaire.Game;
 
 /// <summary>
@@ -41,6 +43,36 @@ internal sealed class ScoreKeeper
     {
         Score.ShowStats = !Score.ShowStats;
         Changed?.Invoke();
+    }
+
+    /// <summary>The record in the form the host stores it. What storage that is — a browser's
+    /// localStorage, a file, nothing at all — is the host's business and not named here.</summary>
+    public string ToJson() => JsonSerializer.Serialize(Score);
+
+    /// <summary>
+    /// Takes on a stored record, reporting whether it could be read. A record we cannot read
+    /// is a record we start over, not a broken game, so unreadable JSON is a false rather than
+    /// an exception. Copied into the score we already have rather than swapped for it: the
+    /// game and the board are holding that same object.
+    /// </summary>
+    public bool Load(string json)
+    {
+        try
+        {
+            var saved = JsonSerializer.Deserialize<PlayerScore>(json);
+
+            if (saved is null)
+            {
+                return false;
+            }
+
+            Score.CopyFrom(saved);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     /// <summary>

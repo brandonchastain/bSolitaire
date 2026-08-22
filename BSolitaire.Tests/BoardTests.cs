@@ -137,7 +137,7 @@ public class BoardTests
     {
         var board = Empty();
 
-        var home = board.FoundationFor(Up(Suit.Hearts, Rank.Ace));
+        var home = Rules.FoundationFor(board.Position, Up(Suit.Hearts, Rank.Ace));
 
         Assert.NotNull(home);
         Assert.Equal((int)Suit.Hearts, home!.Value.PileIndex);
@@ -149,7 +149,7 @@ public class BoardTests
         var board = Empty();
         board.Position.Place(Foundation((int)Suit.Hearts), Up(Suit.Spades, Rank.Ace));
 
-        var home = board.FoundationFor(Up(Suit.Hearts, Rank.Ace));
+        var home = Rules.FoundationFor(board.Position, Up(Suit.Hearts, Rank.Ace));
 
         Assert.NotNull(home);
         Assert.Empty(board.Position.FoundationPiles[home!.Value.PileIndex]);
@@ -160,7 +160,7 @@ public class BoardTests
     {
         var board = Empty();
 
-        Assert.Null(board.FoundationFor(Up(Suit.Hearts, Rank.Five)));
+        Assert.Null(Rules.FoundationFor(board.Position, Up(Suit.Hearts, Rank.Five)));
     }
 
     [Fact]

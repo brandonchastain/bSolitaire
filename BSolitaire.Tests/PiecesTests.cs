@@ -316,4 +316,51 @@ public class PiecesTests
     {
         Assert.Contains("Player", new PlayerScore().Summary);
     }
+
+    /// <summary>
+    /// The one that matters: a field that is written and not read back is worse than one that
+    /// was never saved, and that is exactly what happened to ShowStats. Round-tripping every
+    /// field through the same pair the host uses catches the next one for free.
+    /// </summary>
+    [Fact]
+    public void EveryPartOfTheRecordSurvivesBeingStoredAndLoaded()
+    {
+        var written = new ScoreKeeper(new Board());
+        written.Score.Nickname = "Brandon";
+        written.Score.Games = 7;
+        written.Score.Wins = 3;
+        written.Score.Muted = true;
+        written.Score.ShowStats = true;
+
+        var read = new ScoreKeeper(new Board());
+        Assert.True(read.Load(written.ToJson()));
+
+        Assert.Equal("Brandon", read.Score.Nickname);
+        Assert.Equal(7, read.Score.Games);
+        Assert.Equal(3, read.Score.Wins);
+        Assert.True(read.Score.Muted);
+        Assert.True(read.Score.ShowStats);
+    }
+
+    [Fact]
+    public void AnUnreadableRecordIsStartedOverRatherThanThrown()
+    {
+        var scores = new ScoreKeeper(new Board());
+        scores.Score.Games = 4;
+
+        Assert.False(scores.Load("{ not json at all"));
+        Assert.Equal(4, scores.Score.Games);
+    }
+
+    [Fact]
+    public void ARecordFromAnOlderVersionKeepsWhatItHas()
+    {
+        var scores = new ScoreKeeper(new Board());
+
+        Assert.True(scores.Load("{\"Nickname\":\"Ada\",\"Games\":2}"));
+
+        Assert.Equal("Ada", scores.Score.Nickname);
+        Assert.Equal(2, scores.Score.Games);
+        Assert.False(scores.Score.ShowStats);
+    }
 }

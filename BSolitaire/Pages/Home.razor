@@ -1,5 +1,4 @@
 @page "/"
-@using System.Text.Json
 @implements IDisposable
 @inject IJSRuntime JS
 @inject ILogger<Home> Logger
@@ -199,22 +198,9 @@
     {
         var stored = await JS.InvokeAsync<string?>("bSolitaire.loadScore");
 
-        if (stored is not null)
+        if (stored is not null && !game.LoadScore(stored))
         {
-            try
-            {
-                var saved = JsonSerializer.Deserialize<PlayerScore>(stored);
-
-                if (saved is not null)
-                {
-                    game.Score.CopyFrom(saved);
-                }
-            }
-            catch (JsonException ex)
-            {
-                // A record we can't read is a record we start over, not a broken game.
-                Logger.LogWarning(ex, "Discarding unreadable score record");
-            }
+            Logger.LogWarning("Discarding unreadable score record");
         }
 
         game.ScoreChanged += SaveScore;
@@ -243,7 +229,7 @@
     // Fire-and-forget: the game raises this from inside a frame, and the write is a
     // localStorage set that nothing later in the frame depends on.
     private void SaveScore() =>
-        _ = JS.InvokeVoidAsync("bSolitaire.saveScore", JsonSerializer.Serialize(game.Score));
+        _ = JS.InvokeVoidAsync("bSolitaire.saveScore", game.ScoreJson());
 
     // Pointer events rather than click: they cover mouse, touch, and pen, and a tap is
     // just a press that never travelled — the game turns that back into a click itself.
