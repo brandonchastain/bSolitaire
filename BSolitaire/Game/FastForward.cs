@@ -73,7 +73,7 @@ internal sealed class FastForward
 
         framesUntilNextCard = FramesPerCard;
 
-        int before = board.FoundationTotal;
+        int before = board.Position.FoundationTotal;
         if (!board.FastForwardStep())
         {
             IsRunning = false;
@@ -82,7 +82,7 @@ internal sealed class FastForward
 
         // Turning the stock over is a step but not progress. Only cards reaching a
         // foundation reset the stall count.
-        stepsWithoutProgress = board.FoundationTotal > before ? 0 : stepsWithoutProgress + 1;
+        stepsWithoutProgress = board.Position.FoundationTotal > before ? 0 : stepsWithoutProgress + 1;
         return FastForwardTick.Advanced;
     }
 }

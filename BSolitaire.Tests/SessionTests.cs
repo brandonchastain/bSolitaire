@@ -78,8 +78,8 @@ public class SessionTests
 
         game.OnKeyDown("KeyR");
 
-        Assert.Equal(24, game.Board.FaceDownPile.Count);
-        Assert.Empty(game.Board.FaceUpPile);
+        Assert.Equal(24, game.Board.Position.FaceDownPile.Count);
+        Assert.Empty(game.Board.Position.FaceUpPile);
         Assert.NotEqual(before, game.Board.Version);
     }
 
@@ -116,13 +116,13 @@ public class SessionTests
 
         game.OnPointerDown(stockX, stockY);
         game.OnPointerUp(stockX, stockY);
-        Assert.Single(game.Board.FaceUpPile); // an ordinary tap deals
+        Assert.Single(game.Board.Position.FaceUpPile); // an ordinary tap deals
 
         var (muteX, muteY) = Centre(game.Layout.MuteButton);
         game.OnPointerDown(muteX, muteY);
         game.OnPointerUp(muteX, muteY);
 
-        Assert.Single(game.Board.FaceUpPile); // the swallowed release dealt nothing more
+        Assert.Single(game.Board.Position.FaceUpPile); // the swallowed release dealt nothing more
     }
 
     [Fact]
@@ -136,7 +136,7 @@ public class SessionTests
         game.OnPointerUp(x, y);
         game.Update(TimeSpan.FromMilliseconds(16));
 
-        Assert.Equal(0, game.Board.FoundationTotal);
+        Assert.Equal(0, game.Board.Position.FoundationTotal);
     }
 
     [Fact]
@@ -169,7 +169,7 @@ public class SessionTests
         game.Update(TimeSpan.FromMilliseconds(16));
 
         Assert.Equal(GameState.Playing, game.State);
-        Assert.True(game.Board.FoundationTotal < 52, "the whole finish happened inside one frame");
+        Assert.True(game.Board.Position.FoundationTotal < 52, "the whole finish happened inside one frame");
     }
 
     [Fact]
@@ -342,9 +342,9 @@ public class SessionTests
             game.OnPointerUp(x, y);
         }
 
-        Assert.Equal(2, board.FoundationPiles[0].Count);
-        Assert.Single(board.TableauPiles[0]);
-        Assert.Equal(Rank.Three, board.TableauPiles[0][0].Rank);
+        Assert.Equal(2, board.Position.FoundationPiles[0].Count);
+        Assert.Single(board.Position.TableauPiles[0]);
+        Assert.Equal(Rank.Three, board.Position.TableauPiles[0][0].Rank);
     }
 
     private static Card FaceUp(Suit suit, Rank rank)

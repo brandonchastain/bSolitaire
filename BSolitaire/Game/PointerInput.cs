@@ -122,7 +122,7 @@ internal sealed class PointerInput
             return; // the panel is on top; nothing under it is grabbable
         }
 
-        if (!layout.TryHitTest(board, x, y, out Location loc, out int indexInPile))
+        if (!layout.TryHitTest(board.Position, x, y, out Location loc, out int indexInPile))
         {
             return;
         }
@@ -216,12 +216,12 @@ internal sealed class PointerInput
     {
         cards = Array.Empty<Card>();
 
-        if (!Rules.CanLift(board, loc, indexInPile))
+        if (!Rules.CanLift(board.Position, loc, indexInPile))
         {
             return false;
         }
 
-        var pile = board.Pile(loc);
+        var pile = board.Position.Pile(loc);
         var lifted = new List<Card>(pile.Count - indexInPile);
 
         for (int i = indexInPile; i < pile.Count; i++)
@@ -240,7 +240,7 @@ internal sealed class PointerInput
         double probeX = x - held.OffsetX + layout.CardWidth / 2;
         double probeY = y - held.OffsetY + layout.CardHeight / 2;
 
-        if (!layout.TryHitPile(board, probeX, probeY, out Location dest) || dest == held.From)
+        if (!layout.TryHitPile(board.Position, probeX, probeY, out Location dest) || dest == held.From)
         {
             return;
         }
@@ -269,7 +269,7 @@ internal sealed class PointerInput
             return;
         }
 
-        if (!layout.TryHitTest(board, x, y, out Location loc, out int indexInPile))
+        if (!layout.TryHitTest(board.Position, x, y, out Location loc, out int indexInPile))
         {
             ClearSelection(); // tapping bare felt cancels a selection
             return;
@@ -323,7 +323,7 @@ internal sealed class PointerInput
     /// </summary>
     private bool SendHome(Location loc)
     {
-        var pile = board.Pile(loc);
+        var pile = board.Position.Pile(loc);
 
         if (loc.Kind == PileKind.Foundation || selectedCount != 1 || pile.Count == 0)
         {
@@ -347,13 +347,13 @@ internal sealed class PointerInput
     /// </summary>
     private void Select(Location loc, int indexInPile)
     {
-        if (!Rules.CanLift(board, loc, indexInPile))
+        if (!Rules.CanLift(board.Position, loc, indexInPile))
         {
             return;
         }
 
         selected = loc;
-        selectedCount = board.Pile(loc).Count - indexInPile;
+        selectedCount = board.Position.Pile(loc).Count - indexInPile;
     }
 
     private void ClearSelection()
@@ -374,12 +374,12 @@ internal sealed class PointerInput
 
         foreach (var kind in DropKinds)
         {
-            int pileCount = board.PileCountOf(kind);
+            int pileCount = board.Position.PileCountOf(kind);
             for (int pileIndex = 0; pileIndex < pileCount; pileIndex++)
             {
                 var to = new Location(kind, pileIndex);
 
-                if (to != from && Rules.IsLegal(board, new Move(from, to, count)))
+                if (to != from && Rules.IsLegal(board.Position, new Move(from, to, count)))
                 {
                     dropTargets.Add(to);
                 }
@@ -399,7 +399,7 @@ internal sealed class PointerInput
 
         if (drag == null &&
             !OverBanner(x, y) &&
-            layout.TryHitTest(board, x, y, out Location loc, out int indexInPile) &&
+            layout.TryHitTest(board.Position, x, y, out Location loc, out int indexInPile) &&
             TryGrab(loc, indexInPile, out _))
         {
             pile = loc;

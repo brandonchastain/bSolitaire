@@ -177,7 +177,7 @@ internal sealed class BoardLayout
         FanOffset = Math.Clamp(toFit, CardHeight * 0.12, CardHeight * Blend(0.5, 0.28));
 
         // Sized off the card rather than the viewport, so the panel and its text keep the
-        // same proportions as everything else on the board.
+        // same proportions as everything else on the position.
         double bannerW = Math.Min(width - 2 * gutter, CardWidth * 4.4);
         double bannerH = CardHeight * 1.15;
         Banner = new Rect((width - bannerW) / 2, (height - bannerH) / 2, bannerW, bannerH);
@@ -256,17 +256,17 @@ internal sealed class BoardLayout
     }
 
     /// <summary>
-    /// Pile-level hit test, used for drop targets. Extends tableau columns to bottom of the board.
+    /// Pile-level hit test, used for drop targets. Extends tableau columns to bottom of the position.
     /// </summary>
-    public bool TryHitPile(Board board, double x, double y, out Location loc)
+    public bool TryHitPile(Position position, double x, double y, out Location loc)
     {
         foreach (var kind in DropTargetKinds)
         {
-            int pileCount = board.PileCountOf(kind);
+            int pileCount = position.PileCountOf(kind);
             for (int pileIndex = 0; pileIndex < pileCount; pileIndex++)
             {
                 var location = new Location(kind, pileIndex);
-                var pile = board.Pile(location);
+                var pile = position.Pile(location);
                 var slot = EmptySlot(location);
 
                 // A tableau column runs to the bottom of the board; everything else
@@ -288,15 +288,15 @@ internal sealed class BoardLayout
         return false;
     }
 
-    public bool TryHitTest(Board board, double x, double y, out Location loc, out int indexInPile)
+    public bool TryHitTest(Position position, double x, double y, out Location loc, out int indexInPile)
     {
-        foreach (var kind in Board.AllKinds)
+        foreach (var kind in Position.AllKinds)
         {
-            int pileCount = board.PileCountOf(kind);
+            int pileCount = position.PileCountOf(kind);
             for (int pileIndex = 0; pileIndex < pileCount; pileIndex++)
             {
                 var location = new Location(kind, pileIndex);
-                var pile = board.Pile(location);
+                var pile = position.Pile(location);
 
                 if (pile.Count == 0)
                 {

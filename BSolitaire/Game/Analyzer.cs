@@ -56,7 +56,7 @@ internal sealed class Analyzer
         if (analysedVersion != board.Version)
         {
             analysedVersion = board.Version;
-            solver = board.State == GameState.Playing ? new Solver(board) : null;
+            solver = board.State == GameState.Playing ? new Solver(board.Position) : null;
         }
 
         if (paused || solver == null || solver.Done)

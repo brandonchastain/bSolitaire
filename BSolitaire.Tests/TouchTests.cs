@@ -40,8 +40,8 @@ public class TouchTests
         input.Move(x, y);
         input.Up(x, y);
 
-        Assert.Empty(board.TableauPiles[0]);
-        Assert.Single(board.FoundationPiles[0]);
+        Assert.Empty(board.Position.TableauPiles[0]);
+        Assert.Single(board.Position.FoundationPiles[0]);
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public class TouchTests
         input.Move(x, y);
         input.Up(x, y);
 
-        Assert.Single(board.FoundationPiles[0]);
+        Assert.Single(board.Position.FoundationPiles[0]);
     }
 
     [Fact]
@@ -86,8 +86,8 @@ public class TouchTests
         input.Move(target.X, target.Y);
         input.Up(target.X, target.Y);
 
-        Assert.Empty(board.TableauPiles[0]);
-        Assert.Equal(2, board.TableauPiles[1].Count);
+        Assert.Empty(board.Position.TableauPiles[0]);
+        Assert.Equal(2, board.Position.TableauPiles[1].Count);
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public class TouchTests
 
         foreach (var target in input.DropTargets)
         {
-            Assert.True(Rules.IsLegal(board, new Move(Tableau(0), target, 1)),
+            Assert.True(Rules.IsLegal(board.Position, new Move(Tableau(0), target, 1)),
                 $"{target} was offered but would refuse the card");
         }
 
@@ -170,13 +170,13 @@ public class TouchTests
 
         input.Down(at.X, at.Y, touch: true);
         input.Up(at.X, at.Y);
-        Assert.Single(board.TableauPiles[0]); // selected, not moved
+        Assert.Single(board.Position.TableauPiles[0]); // selected, not moved
 
         input.Down(at.X, at.Y, touch: true);
         input.Up(at.X, at.Y);
 
-        Assert.Empty(board.TableauPiles[0]);
-        Assert.Equal(Rank.Ace, board.FoundationPiles[(int)Suit.Hearts][0].Rank);
+        Assert.Empty(board.Position.TableauPiles[0]);
+        Assert.Equal(Rank.Ace, board.Position.FoundationPiles[(int)Suit.Hearts][0].Rank);
     }
 
     [Fact]
@@ -193,7 +193,7 @@ public class TouchTests
         input.Down(at.X, at.Y, touch: true);
         input.Up(at.X, at.Y);
 
-        Assert.Single(board.TableauPiles[0]);
+        Assert.Single(board.Position.TableauPiles[0]);
 
         // Put down, not still held: a tap on the ten now selects the ten rather than moving
         // the nine onto it.
@@ -201,8 +201,8 @@ public class TouchTests
         input.Down(ten.X, ten.Y, touch: true);
         input.Up(ten.X, ten.Y);
 
-        Assert.Single(board.TableauPiles[0]);
-        Assert.Single(board.TableauPiles[1]);
+        Assert.Single(board.Position.TableauPiles[0]);
+        Assert.Single(board.Position.TableauPiles[1]);
     }
 
     [Fact]
@@ -223,7 +223,7 @@ public class TouchTests
         input.Down(x, y, touch: true);
         input.Up(x, y);
 
-        Assert.Equal(2, board.TableauPiles[0].Count);
+        Assert.Equal(2, board.Position.TableauPiles[0].Count);
     }
 
     [Fact]
@@ -242,8 +242,8 @@ public class TouchTests
         input.Down(ten.X, ten.Y, touch: true);
         input.Up(ten.X, ten.Y);
 
-        Assert.Empty(board.TableauPiles[0]);
-        Assert.Equal(2, board.TableauPiles[1].Count);
+        Assert.Empty(board.Position.TableauPiles[0]);
+        Assert.Equal(2, board.Position.TableauPiles[1].Count);
     }
 
     private static (Board Board, BoardLayout Layout, PointerInput Input) Table()

@@ -7,8 +7,6 @@ namespace BSolitaire.Game;
 /// </summary>
 internal class Board
 {
-    public static readonly PileKind[] AllKinds = Position.AllKinds;
-
     /// <summary>Ace through king: a full foundation.</summary>
     private const int FoundationSize = 13;
 
@@ -41,16 +39,6 @@ internal class Board
     public Board() => Reset();
 
     public Position Position { get; } = new();
-
-    public IReadOnlyList<Card> FaceDownPile => Position.FaceDownPile;
-
-    public IReadOnlyList<Card> FaceUpPile => Position.FaceUpPile;
-
-    public IReadOnlyList<IReadOnlyList<Card>> FoundationPiles => Position.FoundationPiles;
-
-    public IReadOnlyList<IReadOnlyList<Card>> TableauPiles => Position.TableauPiles;
-
-    public int FoundationTotal => Position.FoundationTotal;
 
     /// <summary>Recomputed after every move rather than on demand: the answer only changes when
     /// the board does, and both the drawer and the input path ask for it.</summary>
@@ -105,10 +93,6 @@ internal class Board
     /// arranged directly, and a board cannot notice cards it did not move.
     /// </summary>
     public void Settle() => RefreshState();
-
-    public IReadOnlyList<Card> Pile(Location loc) => Position.Pile(loc);
-
-    public int PileCountOf(PileKind kind) => Position.PileCountOf(kind);
 
     public void ClearDirty()
     {
@@ -180,7 +164,7 @@ internal class Board
     {
         for (int i = 0; i < Position.FoundationCount; i++)
         {
-            var pile = FoundationPiles[i];
+            var pile = Position.FoundationPiles[i];
             if (pile.Count > 0 && Rules.CanFound(card, pile[^1]))
             {
                 return new Location(PileKind.Foundation, i);
@@ -193,14 +177,14 @@ internal class Board
         }
 
         int preferred = (int)card.Suit;
-        if (FoundationPiles[preferred].Count == 0)
+        if (Position.FoundationPiles[preferred].Count == 0)
         {
             return new Location(PileKind.Foundation, preferred);
         }
 
         for (int i = 0; i < Position.FoundationCount; i++)
         {
-            if (FoundationPiles[i].Count == 0)
+            if (Position.FoundationPiles[i].Count == 0)
             {
                 return new Location(PileKind.Foundation, i);
             }
@@ -218,14 +202,14 @@ internal class Board
     {
         for (int i = 0; i < Position.TableauCount; i++)
         {
-            var pile = TableauPiles[i];
+            var pile = Position.TableauPiles[i];
             if (pile.Count > 0 && FoundationFor(pile[^1]) is { } home)
             {
                 return MakeMove(new Move(new Location(PileKind.Tableau, i), home, 1));
             }
         }
 
-        if (FaceUpPile.Count > 0 && FoundationFor(FaceUpPile[^1]) is { } wasteHome)
+        if (Position.FaceUpPile.Count > 0 && FoundationFor(Position.FaceUpPile[^1]) is { } wasteHome)
         {
             return MakeMove(new Move(new Location(PileKind.FaceUp, 0), wasteHome, 1));
         }
@@ -238,10 +222,10 @@ internal class Board
 
     public bool MakeMove(Move move)
     {
-        var from = Pile(move.From);
-        var to = Pile(move.To);
+        var from = Position.Pile(move.From);
+        var to = Position.Pile(move.To);
 
-        if (Rules.IsLegal(this, move))
+        if (Rules.IsLegal(Position, move))
         {
             // Where the cards sat and where they are about to sit, read off before the move
             // rather than after it: those two slots are the ends of the flight, and once the
@@ -283,7 +267,7 @@ internal class Board
 
         if (move.From.Kind == PileKind.FaceDown && move.To.Kind == PileKind.FaceUp)
         {
-            var topCard = FaceUpPile[^1];
+            var topCard = Position.FaceUpPile[^1];
             topCard.Flip();
             Play(Sound.Stock);
         }
@@ -291,9 +275,9 @@ internal class Board
         {
             Play(move.To.Kind == PileKind.Foundation ? Sound.Foundation : Sound.Place);
 
-            if (move.From.Kind == PileKind.Tableau && TableauPiles[move.From.PileIndex].Count > 0)
+            if (move.From.Kind == PileKind.Tableau && Position.TableauPiles[move.From.PileIndex].Count > 0)
             {
-                var topCard = TableauPiles[move.From.PileIndex][^1];
+                var topCard = Position.TableauPiles[move.From.PileIndex][^1];
                 if (!topCard.IsFaceUp)
                 {
                     topCard.Flip();
@@ -303,7 +287,7 @@ internal class Board
                     Play(Sound.Flip);
 
                     var uncovered = move.From;
-                    int index = TableauPiles[uncovered.PileIndex].Count - 1;
+                    int index = Position.TableauPiles[uncovered.PileIndex].Count - 1;
                     Moved(new Motion(MotionKind.Flip, topCard, uncovered, index, uncovered, index));
                 }
             }
@@ -321,7 +305,7 @@ internal class Board
 
     public bool DealFromStock()
     {
-        if (FaceDownPile.Count == 0)
+        if (Position.FaceDownPile.Count == 0)
         {
             return false;
         }
@@ -339,7 +323,7 @@ internal class Board
     /// </summary>
     public bool RecycleWaste()
     {
-        if (FaceDownPile.Count > 0 || FaceUpPile.Count == 0)
+        if (Position.FaceDownPile.Count > 0 || Position.FaceUpPile.Count == 0)
         {
             return false;
         }
@@ -349,9 +333,9 @@ internal class Board
         var waste = new Location(PileKind.FaceUp, 0);
         var stock = new Location(PileKind.FaceDown, 0);
 
-        for (int i = FaceUpPile.Count - 1; i >= 0; i--)
+        for (int i = Position.FaceUpPile.Count - 1; i >= 0; i--)
         {
-            var card = FaceUpPile[i];
+            var card = Position.FaceUpPile[i];
             card.Flip();
             Position.Place(stock, card);
         }
@@ -406,7 +390,7 @@ internal class Board
         {
             for (int pileIndex = row; pileIndex < Position.TableauCount; pileIndex++)
             {
-                var card = TableauPiles[pileIndex][row];
+                var card = Position.TableauPiles[pileIndex][row];
                 Moved(new Motion(
                     MotionKind.Move,
                     card,
@@ -426,11 +410,11 @@ internal class Board
         Version++;
         CanFastForward = false;
 
-        foreach (var pile in FoundationPiles)
+        foreach (var pile in Position.FoundationPiles)
         {
             if (pile.Count < FoundationSize)
             {
-                State = Rules.IsStuck(this) ? GameState.Stuck : GameState.Playing;
+                State = Rules.IsStuck(Position) ? GameState.Stuck : GameState.Playing;
                 CanFastForward = State == GameState.Playing && NothingLeftFaceDown();
                 return;
             }
@@ -441,7 +425,7 @@ internal class Board
 
     private bool NothingLeftFaceDown()
     {
-        foreach (var pile in TableauPiles)
+        foreach (var pile in Position.TableauPiles)
         {
             foreach (var card in pile)
             {

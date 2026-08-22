@@ -54,7 +54,7 @@ internal readonly record struct SolverBudget(int States, int Nodes)
 /// making it stop.
 ///
 /// It is resumable: <see cref="Step"/> does a slice of work and returns, so the search rides
-/// along on the frame loop instead of freezing the board. Running out of budget yields
+/// along on the frame loop instead of freezing the position. Running out of budget yields
 /// <see cref="SolveResult.Unknown"/>, never a wrong answer — <see cref="SolveResult.Unwinnable"/>
 /// is only ever reported after the entire tree below the position has been examined.
 /// </summary>
@@ -95,13 +95,13 @@ internal sealed class Solver
     /// it is the one prune that could in principle hide a win, so it can be cross-checked:
     /// a position called unwinnable with it on must still be unwinnable with it off.
     /// </param>
-    public Solver(Board board, SolverBudget? budget = null, bool autoplay = true)
+    public Solver(Position position, SolverBudget? budget = null, bool autoplay = true)
     {
         this.budget = budget ?? SolverBudget.Default;
         this.autoplay = autoplay;
         seen = new Seen(this.budget.States);
 
-        var root = Position.From(board);
+        var root = Packed.From(position);
         if (root.IsWon)
         {
             Result = SolveResult.Winnable;
@@ -163,7 +163,7 @@ internal sealed class Solver
             if (stack.Count == 0)
             {
                 // Every position reachable from the root has been expanded and none of them
-                // was a finished board.
+                // was a finished position.
                 Result = SolveResult.Unwinnable;
                 return true;
             }
@@ -207,7 +207,7 @@ internal sealed class Solver
     /// again the move is forced — one successor instead of a whole fan of them — which is
     /// what keeps the tree small enough to finish.
     /// </summary>
-    private static void Successors(in Position p, bool autoplay, List<Position> children)
+    private static void Successors(in Packed p, bool autoplay, List<Packed> children)
     {
         if (autoplay && TryAutoplay(p, out var forced))
         {
@@ -311,7 +311,7 @@ internal sealed class Solver
     /// opposite colour is still looking for a base to sit on — and the other foundation of its
     /// own colour has reached r-2. Aces and twos are always safe.
     /// </summary>
-    private static bool TryAutoplay(in Position p, out Position result)
+    private static bool TryAutoplay(in Packed p, out Packed result)
     {
         for (int i = 0; i < Piles; i++)
         {
@@ -335,7 +335,7 @@ internal sealed class Solver
         return false;
     }
 
-    private static bool IsSafe(in Position p, byte card)
+    private static bool IsSafe(in Packed p, byte card)
     {
         int rank = RankOf(card);
         if (rank <= 2)
@@ -380,7 +380,7 @@ internal sealed class Solver
     private static bool IsRed(int suit) => suit == (int)Suit.Diamonds || suit == (int)Suit.Hearts;
 
     /// <summary>Pushes the position's children onto the search stack, reusing a spent frame.</summary>
-    private void Expand(in Position position)
+    private void Expand(in Packed packed)
     {
         Frame frame;
         if (spare.Count > 0)
@@ -393,9 +393,10 @@ internal sealed class Solver
             frame = new Frame();
         }
 
-        Successors(position, autoplay, frame.Children);
+        Successors(packed, autoplay, frame.Children);
         stack.Push(frame);
     }
+
     /// <summary>
     /// A board, stripped to what the search needs, in one flat array.
     ///
@@ -413,7 +414,7 @@ internal sealed class Solver
     /// copy into space the caller already owns and the collector never hears about it — which
     /// matters far more on the browser's collector than on the desktop one.
     /// </summary>
-    private struct Position
+    private struct Packed
     {
         /// <summary>Cards still in the stock or waste.</summary>
         public ulong Deck;
@@ -428,13 +429,13 @@ internal sealed class Solver
         public readonly bool IsWon =>
             Foundation(0) == 13 && Foundation(1) == 13 && Foundation(2) == 13 && Foundation(3) == 13;
 
-        public static Position From(Board board)
+        public static Packed From(Position position)
         {
-            var p = new Position();
+            var p = new Packed();
 
             for (int i = 0; i < Piles; i++)
             {
-                var pile = board.TableauPiles[i];
+                var pile = position.TableauPiles[i];
                 p.data[LengthAt + i] = (byte)pile.Count;
 
                 for (int j = 0; j < pile.Count; j++)
@@ -447,7 +448,7 @@ internal sealed class Solver
                 }
             }
 
-            foreach (var pile in board.FoundationPiles)
+            foreach (var pile in position.FoundationPiles)
             {
                 if (pile.Count > 0)
                 {
@@ -455,12 +456,12 @@ internal sealed class Solver
                 }
             }
 
-            foreach (var card in board.FaceDownPile)
+            foreach (var card in position.FaceDownPile)
             {
                 p.Deck |= 1UL << Encode(card);
             }
 
-            foreach (var card in board.FaceUpPile)
+            foreach (var card in position.FaceUpPile)
             {
                 p.Deck |= 1UL << Encode(card);
             }
@@ -472,7 +473,7 @@ internal sealed class Solver
 
         public readonly bool CanFound(byte card) => Foundation(SuitOf(card)) == RankOf(card) - 1;
 
-        public readonly Position MoveToFoundation(int pile)
+        public readonly Packed MoveToFoundation(int pile)
         {
             var c = Clone();
             byte card = Top(pile);
@@ -492,7 +493,7 @@ internal sealed class Solver
 
         public readonly byte Top(int pile) => data[pile * PileCap + Length(pile) - 1];
 
-        public readonly Position DeckToFoundation(byte card)
+        public readonly Packed DeckToFoundation(byte card)
         {
             var c = Clone();
             c.data[FoundationAt + SuitOf(card)] = (byte)RankOf(card);
@@ -500,7 +501,7 @@ internal sealed class Solver
             return c;
         }
 
-        public readonly Position DeckToPile(byte card, int pile)
+        public readonly Packed DeckToPile(byte card, int pile)
         {
             var c = Clone();
             c.data[pile * PileCap + c.Length(pile)] = card;
@@ -509,7 +510,7 @@ internal sealed class Solver
             return c;
         }
 
-        public readonly Position FoundationToPile(int suit, int pile)
+        public readonly Packed FoundationToPile(int suit, int pile)
         {
             var c = Clone();
             byte card = MakeCard(suit, c.Foundation(suit));
@@ -519,7 +520,7 @@ internal sealed class Solver
             return c;
         }
 
-        public readonly Position MoveRun(int from, int at, int to)
+        public readonly Packed MoveRun(int from, int at, int to)
         {
             var c = Clone();
             int count = Length(from) - at;
@@ -603,7 +604,7 @@ internal sealed class Solver
             hash *= 1099511628211UL;
         }
         /// <summary>A whole position, by value. No heap traffic at all.</summary>
-        private readonly Position Clone() => this;
+        private readonly Packed Clone() => this;
 
         /// <summary>
         /// Turns the newly exposed card face up. Taking the whole face-up run off a pile
@@ -638,7 +639,7 @@ internal sealed class Solver
     {
         /// <summary>Sized past the widest branching a Klondike position reaches, so a
         /// recycled frame never has to grow its list a second time.</summary>
-        public List<Position> Children { get; } = new(32);
+        public List<Packed> Children { get; } = new(32);
 
         public int Next { get; set; }
 

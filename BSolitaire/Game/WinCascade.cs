@@ -41,7 +41,7 @@ internal sealed class WinCascade
     /// but every card still in the air is drawn again every frame.</summary>
     private const int MaxInFlight = 7;
 
-    private readonly Board board;
+    private readonly Position position;
     private readonly BoardLayout layout;
     private readonly List<FallingCard> falling = new();
     private readonly Random random = new();
@@ -55,9 +55,9 @@ internal sealed class WinCascade
     private int framesUntilNextCard;
     private int launched;
 
-    public WinCascade(Board board, BoardLayout layout)
+    public WinCascade(Position position, BoardLayout layout)
     {
-        this.board = board;
+        this.position = position;
         this.layout = layout;
     }
 
@@ -67,7 +67,7 @@ internal sealed class WinCascade
 
     public IReadOnlyList<FallingCard> Falling => falling;
 
-    /// <summary>Sends the foundations down the board. Started once, when the game is won.</summary>
+    /// <summary>Sends the foundations down the position. Started once, when the game is won.</summary>
     public void Start()
     {
         falling.Clear();
@@ -138,12 +138,12 @@ internal sealed class WinCascade
     /// </summary>
     private void Launch()
     {
-        for (int attempt = 0; attempt < board.FoundationPiles.Count; attempt++)
+        for (int attempt = 0; attempt < position.FoundationPiles.Count; attempt++)
         {
             int index = nextFoundation;
-            nextFoundation = (nextFoundation + 1) % board.FoundationPiles.Count;
+            nextFoundation = (nextFoundation + 1) % position.FoundationPiles.Count;
 
-            var pile = board.FoundationPiles[index];
+            var pile = position.FoundationPiles[index];
             int depth = taken[index];
 
             if (depth >= pile.Count)
@@ -174,5 +174,5 @@ internal sealed class WinCascade
         launched = TotalToLaunch();
     }
 
-    private int TotalToLaunch() => board.FoundationTotal;
+    private int TotalToLaunch() => position.FoundationTotal;
 }

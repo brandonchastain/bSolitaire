@@ -38,7 +38,7 @@ internal sealed class Solitaire : ISolitaireView
         fastForward = new FastForward(Board);
         scores = new ScoreKeeper(Board);
         animator = new Animator(Board, Layout);
-        cascade = new WinCascade(Board, Layout);
+        cascade = new WinCascade(Board.Position, Layout);
     }
 
     /// <summary>Raised when <see cref="Score"/> has changed and is worth persisting.</summary>

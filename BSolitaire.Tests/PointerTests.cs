@@ -23,8 +23,8 @@ public class PointerTests
 
         DragCard(input, Grab(layout, Tableau(0), 0), Grab(layout, Tableau(1), 0));
 
-        Assert.Empty(board.TableauPiles[0]);
-        Assert.Equal(2, board.TableauPiles[1].Count);
+        Assert.Empty(board.Position.TableauPiles[0]);
+        Assert.Equal(2, board.Position.TableauPiles[1].Count);
     }
 
     [Fact]
@@ -36,8 +36,8 @@ public class PointerTests
 
         DragCard(input, Grab(layout, Tableau(0), 0), Grab(layout, Tableau(1), 0));
 
-        Assert.Single(board.TableauPiles[0]);
-        Assert.Single(board.TableauPiles[1]);
+        Assert.Single(board.Position.TableauPiles[0]);
+        Assert.Single(board.Position.TableauPiles[1]);
         Assert.Null(input.Drag);
     }
 
@@ -51,8 +51,8 @@ public class PointerTests
 
         DragCard(input, Grab(layout, Tableau(0), 0), Grab(layout, Tableau(1), 0));
 
-        Assert.Empty(board.TableauPiles[0]);
-        Assert.Equal(3, board.TableauPiles[1].Count);
+        Assert.Empty(board.Position.TableauPiles[0]);
+        Assert.Equal(3, board.Position.TableauPiles[1].Count);
     }
 
     [Fact]
@@ -95,8 +95,8 @@ public class PointerTests
         input.Cancel();
 
         Assert.Null(input.Drag);
-        Assert.Single(board.TableauPiles[0]);
-        Assert.Single(board.TableauPiles[1]);
+        Assert.Single(board.Position.TableauPiles[0]);
+        Assert.Single(board.Position.TableauPiles[1]);
     }
 
     [Fact]
@@ -107,8 +107,8 @@ public class PointerTests
 
         Tap(input, Grab(layout, Stock, 0));
 
-        Assert.Empty(board.FaceDownPile);
-        Assert.Single(board.FaceUpPile);
+        Assert.Empty(board.Position.FaceDownPile);
+        Assert.Single(board.Position.FaceUpPile);
     }
 
     [Fact]
@@ -119,9 +119,9 @@ public class PointerTests
 
         Tap(input, Centre(layout.EmptySlot(Stock)));
 
-        Assert.Single(board.FaceDownPile);
-        Assert.Empty(board.FaceUpPile);
-        Assert.False(board.FaceDownPile[0].IsFaceUp);
+        Assert.Single(board.Position.FaceDownPile);
+        Assert.Empty(board.Position.FaceUpPile);
+        Assert.False(board.Position.FaceDownPile[0].IsFaceUp);
     }
 
     [Fact]
@@ -135,8 +135,8 @@ public class PointerTests
         Tap(input, Grab(layout, Tableau(0), 0));
         Tap(input, Grab(layout, Tableau(1), 0));
 
-        Assert.Empty(board.TableauPiles[0]);
-        Assert.Equal(2, board.TableauPiles[1].Count);
+        Assert.Empty(board.Position.TableauPiles[0]);
+        Assert.Equal(2, board.Position.TableauPiles[1].Count);
     }
 
     [Fact]
@@ -152,8 +152,8 @@ public class PointerTests
         Tap(input, Grab(layout, Tableau(0), 0));
         Tap(input, Grab(layout, Tableau(1), 0));
 
-        Assert.Equal(2, board.TableauPiles[0].Count);
-        Assert.Single(board.TableauPiles[1]);
+        Assert.Equal(2, board.Position.TableauPiles[0].Count);
+        Assert.Single(board.Position.TableauPiles[1]);
     }
 
     [Fact]
@@ -167,8 +167,8 @@ public class PointerTests
         Tap(input, (Width - 4, Height / 2)); // nothing out there
         Tap(input, Grab(layout, Tableau(1), 0));
 
-        Assert.Single(board.TableauPiles[0]);
-        Assert.Single(board.TableauPiles[1]);
+        Assert.Single(board.Position.TableauPiles[0]);
+        Assert.Single(board.Position.TableauPiles[1]);
     }
 
     [Fact]
@@ -182,8 +182,8 @@ public class PointerTests
         Tap(input, Grab(layout, Tableau(0), 0)); // deselects rather than refusing a self-move
         Tap(input, Grab(layout, Tableau(1), 0)); // so this selects the ten instead of moving
 
-        Assert.Single(board.TableauPiles[0]);
-        Assert.Single(board.TableauPiles[1]);
+        Assert.Single(board.Position.TableauPiles[0]);
+        Assert.Single(board.Position.TableauPiles[1]);
         Assert.DoesNotContain(Sound.Invalid, board.Sounds);
     }
 
@@ -196,8 +196,8 @@ public class PointerTests
         Tap(input, Grab(layout, Tableau(0), 0));
         Tap(input, Centre(layout.EmptySlot(Tableau(3))));
 
-        Assert.Empty(board.TableauPiles[0]);
-        Assert.Single(board.TableauPiles[3]);
+        Assert.Empty(board.Position.TableauPiles[0]);
+        Assert.Single(board.Position.TableauPiles[3]);
     }
 
     [Fact]
@@ -209,8 +209,8 @@ public class PointerTests
         Tap(input, Grab(layout, Tableau(0), 0));
         Tap(input, Centre(layout.EmptySlot(Foundation(2))));
 
-        Assert.Empty(board.TableauPiles[0]);
-        Assert.Equal(1, board.FoundationTotal);
+        Assert.Empty(board.Position.TableauPiles[0]);
+        Assert.Equal(1, board.Position.FoundationTotal);
     }
 
     [Fact]
@@ -226,8 +226,8 @@ public class PointerTests
         Tap(input, Grab(layout, Tableau(1), 0));                                  // now select the ten
 
         // If the drag had left the nine selected, this last tap would have moved it.
-        Assert.Single(board.TableauPiles[0]);
-        Assert.Single(board.TableauPiles[1]);
+        Assert.Single(board.Position.TableauPiles[0]);
+        Assert.Single(board.Position.TableauPiles[1]);
     }
 
     [Fact]
@@ -240,7 +240,7 @@ public class PointerTests
         Tap(input, at);
         Tap(input, at);
 
-        Assert.Equal(1, board.FoundationTotal);
+        Assert.Equal(1, board.Position.FoundationTotal);
     }
 
     [Fact]
@@ -253,8 +253,8 @@ public class PointerTests
         Tap(input, at);
         Tap(input, at);
 
-        Assert.Equal(0, board.FoundationTotal);
-        Assert.Single(board.TableauPiles[0]);
+        Assert.Equal(0, board.Position.FoundationTotal);
+        Assert.Single(board.Position.TableauPiles[0]);
     }
 
     [Fact]
@@ -270,8 +270,8 @@ public class PointerTests
         Tap(input, at);
         Tap(input, at);
 
-        Assert.Equal(0, board.FoundationTotal);
-        Assert.Equal(2, board.TableauPiles[0].Count);
+        Assert.Equal(0, board.Position.FoundationTotal);
+        Assert.Equal(2, board.Position.TableauPiles[0].Count);
     }
 
     [Fact]
@@ -292,9 +292,9 @@ public class PointerTests
         Tap(input, Grab(layout, Tableau(0), 1));
         Tap(input, Grab(layout, Tableau(0), 1));
 
-        Assert.Single(board.TableauPiles[0]);
-        Assert.Equal(Rank.Three, board.TableauPiles[0][0].Rank);
-        Assert.Equal(2, board.FoundationPiles[0].Count);
+        Assert.Single(board.Position.TableauPiles[0]);
+        Assert.Equal(Rank.Three, board.Position.TableauPiles[0][0].Rank);
+        Assert.Equal(2, board.Position.FoundationPiles[0].Count);
     }
 
     [Fact]
@@ -364,7 +364,7 @@ public class PointerTests
         Tap(input, Centre(layout.NewGameButton));
 
         Assert.Equal(GameState.Playing, board.State);
-        Assert.Equal(24, board.FaceDownPile.Count);
+        Assert.Equal(24, board.Position.FaceDownPile.Count);
     }
 
     /// <summary>A press and release without travel.</summary>

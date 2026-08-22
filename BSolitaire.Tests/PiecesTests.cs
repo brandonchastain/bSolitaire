@@ -221,11 +221,11 @@ public class PiecesTests
         var second = FourKingsFromDone();
         foreach (var kind in new[] { PileKind.Foundation, PileKind.Tableau })
         {
-            for (int i = 0; i < board.PileCountOf(kind); i++)
+            for (int i = 0; i < board.Position.PileCountOf(kind); i++)
             {
                 var loc = new Location(kind, i);
                 board.Position.Strip(loc);
-                board.Position.Place(loc, second.Pile(loc));
+                board.Position.Place(loc, second.Position.Pile(loc));
             }
         }
 

@@ -64,7 +64,7 @@ public class RulesTests
         board.Position.Place(Tableau(0), Down(Suit.Hearts, Rank.Nine));
         board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
-        Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Tableau(1), 1)));
+        Assert.False(Rules.IsLegal(board.Position, new Move(Tableau(0), Tableau(1), 1)));
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public class RulesTests
         board.Position.Place(Tableau(0), Up(Suit.Clubs, Rank.Three));
         board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
-        Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Tableau(1), 2)));
+        Assert.False(Rules.IsLegal(board.Position, new Move(Tableau(0), Tableau(1), 2)));
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public class RulesTests
         var board = Empty();
         board.Position.Place(Stock, Down(Suit.Hearts, Rank.Nine));
 
-        Assert.True(Rules.IsLegal(board, new Move(Stock, Waste, 1)));
+        Assert.True(Rules.IsLegal(board.Position, new Move(Stock, Waste, 1)));
     }
 
     [Fact]
@@ -97,8 +97,8 @@ public class RulesTests
         board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Two));
         board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Ace));
 
-        Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Foundation(0), 2)));
-        Assert.True(Rules.IsLegal(board, new Move(Tableau(0), Foundation(0), 1)));
+        Assert.False(Rules.IsLegal(board.Position, new Move(Tableau(0), Foundation(0), 2)));
+        Assert.True(Rules.IsLegal(board.Position, new Move(Tableau(0), Foundation(0), 1)));
     }
 
     [Fact]
@@ -107,7 +107,7 @@ public class RulesTests
         var board = Empty();
         board.Position.Place(Foundation(0), Up(Suit.Hearts, Rank.Ace));
 
-        Assert.False(Rules.IsLegal(board, new Move(Foundation(0), Foundation(1), 1)));
+        Assert.False(Rules.IsLegal(board.Position, new Move(Foundation(0), Foundation(1), 1)));
     }
 
     [Fact]
@@ -116,7 +116,7 @@ public class RulesTests
         var board = Empty();
         board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
 
-        Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Stock, 1)));
+        Assert.False(Rules.IsLegal(board.Position, new Move(Tableau(0), Stock, 1)));
     }
 
     [Fact]
@@ -125,7 +125,7 @@ public class RulesTests
         var board = Empty();
         board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
 
-        Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Waste, 1)));
+        Assert.False(Rules.IsLegal(board.Position, new Move(Tableau(0), Waste, 1)));
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public class RulesTests
         var board = Empty();
         board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
 
-        Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Tableau(0), 1)));
+        Assert.False(Rules.IsLegal(board.Position, new Move(Tableau(0), Tableau(0), 1)));
     }
 
     [Fact]
@@ -143,8 +143,8 @@ public class RulesTests
         var board = Empty();
         board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
 
-        Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Tableau(1), 2)));
-        Assert.False(Rules.IsLegal(board, new Move(Tableau(0), Tableau(1), 0)));
+        Assert.False(Rules.IsLegal(board.Position, new Move(Tableau(0), Tableau(1), 2)));
+        Assert.False(Rules.IsLegal(board.Position, new Move(Tableau(0), Tableau(1), 0)));
     }
 
     [Fact]
@@ -154,8 +154,8 @@ public class RulesTests
         board.Position.Place(Tableau(0), Up(Suit.Spades, Rank.Ten));
         board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
 
-        Assert.True(Rules.CanLift(board, Tableau(0), 0));
-        Assert.True(Rules.CanLift(board, Tableau(0), 1));
+        Assert.True(Rules.CanLift(board.Position, Tableau(0), 0));
+        Assert.True(Rules.CanLift(board.Position, Tableau(0), 1));
     }
 
     [Fact]
@@ -165,8 +165,8 @@ public class RulesTests
         board.Position.Place(Tableau(0), Down(Suit.Spades, Rank.Ten));
         board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
 
-        Assert.False(Rules.CanLift(board, Tableau(0), 0));
-        Assert.True(Rules.CanLift(board, Tableau(0), 1));
+        Assert.False(Rules.CanLift(board.Position, Tableau(0), 0));
+        Assert.True(Rules.CanLift(board.Position, Tableau(0), 1));
     }
 
     [Fact]
@@ -178,10 +178,10 @@ public class RulesTests
         board.Position.Place(Foundation(0), Up(Suit.Hearts, Rank.Ace));
         board.Position.Place(Foundation(0), Up(Suit.Hearts, Rank.Two));
 
-        Assert.False(Rules.CanLift(board, Waste, 0));
-        Assert.True(Rules.CanLift(board, Waste, 1));
-        Assert.False(Rules.CanLift(board, Foundation(0), 0));
-        Assert.True(Rules.CanLift(board, Foundation(0), 1));
+        Assert.False(Rules.CanLift(board.Position, Waste, 0));
+        Assert.True(Rules.CanLift(board.Position, Waste, 1));
+        Assert.False(Rules.CanLift(board.Position, Foundation(0), 0));
+        Assert.True(Rules.CanLift(board.Position, Foundation(0), 1));
     }
 
     [Fact]
@@ -190,7 +190,7 @@ public class RulesTests
         var board = Empty();
         board.Position.Place(Stock, Down(Suit.Hearts, Rank.Nine));
 
-        Assert.False(Rules.CanLift(board, Stock, 0));
+        Assert.False(Rules.CanLift(board.Position, Stock, 0));
     }
 
     [Fact]
@@ -198,8 +198,8 @@ public class RulesTests
     {
         var board = Empty();
 
-        Assert.False(Rules.CanLift(board, Tableau(0), -1));
-        Assert.False(Rules.CanLift(board, Tableau(0), 0));
+        Assert.False(Rules.CanLift(board.Position, Tableau(0), -1));
+        Assert.False(Rules.CanLift(board.Position, Tableau(0), 0));
     }
 
     [Fact]
@@ -209,16 +209,16 @@ public class RulesTests
         // the generator has not grown a shortcut around the rules.
         var board = new Board();
 
-        foreach (var move in Rules.LegalMoves(board))
+        foreach (var move in Rules.LegalMoves(board.Position))
         {
-            Assert.True(Rules.IsLegal(board, move), $"{move.From} -> {move.To} x{move.Count}");
+            Assert.True(Rules.IsLegal(board.Position, move), $"{move.From} -> {move.To} x{move.Count}");
         }
     }
 
     [Fact]
     public void AFreshDealIsNotStuck()
     {
-        Assert.False(Rules.IsStuck(new Board()));
+        Assert.False(Rules.IsStuck(new Board().Position));
     }
 
     [Fact]
@@ -229,7 +229,7 @@ public class RulesTests
         board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
         board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.King));
 
-        Assert.True(Rules.IsStuck(board));
+        Assert.True(Rules.IsStuck(board.Position));
     }
 
     [Fact]
@@ -239,6 +239,6 @@ public class RulesTests
         board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
         board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ace));
 
-        Assert.False(Rules.IsStuck(board));
+        Assert.False(Rules.IsStuck(board.Position));
     }
 }

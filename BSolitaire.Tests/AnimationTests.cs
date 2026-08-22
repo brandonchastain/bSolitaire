@@ -99,7 +99,7 @@ public class AnimationTests
         animator.Capture(0);
 
         // The board has already turned it over. The picture has not, until half way.
-        Assert.True(board.FaceUpPile[0].IsFaceUp);
+        Assert.True(board.Position.FaceUpPile[0].IsFaceUp);
         Assert.False(animator.InFlight[0].FaceUp);
 
         // Stock to waste is one column, so it is one of the quick ones — past half way well
@@ -238,7 +238,7 @@ public class AnimationTests
     {
         var board = FourKingsFromDone();
         var layout = new BoardLayout(Width, Height);
-        var cascade = new WinCascade(board, layout);
+        var cascade = new WinCascade(board.Position, layout);
 
         for (int i = 0; i < 4; i++)
         {
@@ -260,7 +260,7 @@ public class AnimationTests
         }
 
         Assert.NotEqual(before, cascade.Falling.Count > 0 ? cascade.Falling[0].Y : before + 1);
-        Assert.Equal(52, board.FoundationTotal);
+        Assert.Equal(52, board.Position.FoundationTotal);
     }
 
     [Fact]
@@ -268,7 +268,7 @@ public class AnimationTests
     {
         var board = FourKingsFromDone();
         var layout = new BoardLayout(Width, Height);
-        var cascade = new WinCascade(board, layout);
+        var cascade = new WinCascade(board.Position, layout);
 
         for (int i = 0; i < 4; i++)
         {

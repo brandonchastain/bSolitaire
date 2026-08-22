@@ -50,7 +50,7 @@ internal static class Rules
         return true;
     }
 
-    public static bool IsLegal(Board board, Move move)
+    public static bool IsLegal(Position position, Move move)
     {
         if (move.From == move.To)
         {
@@ -66,10 +66,10 @@ internal static class Rules
         
         var from = move.From.Kind switch
         {
-            PileKind.FaceDown => board.FaceDownPile,
-            PileKind.FaceUp => board.FaceUpPile,
-            PileKind.Foundation => board.FoundationPiles[move.From.PileIndex],
-            PileKind.Tableau => board.TableauPiles[move.From.PileIndex],
+            PileKind.FaceDown => position.FaceDownPile,
+            PileKind.FaceUp => position.FaceUpPile,
+            PileKind.Foundation => position.FoundationPiles[move.From.PileIndex],
+            PileKind.Tableau => position.TableauPiles[move.From.PileIndex],
             _ => throw new ArgumentOutOfRangeException(nameof(move.From.Kind), move.From.Kind, null)
         };
 
@@ -81,10 +81,10 @@ internal static class Rules
 
         var to = move.To.Kind switch
         {
-            PileKind.FaceDown => board.FaceDownPile,
-            PileKind.FaceUp => board.FaceUpPile,
-            PileKind.Foundation => board.FoundationPiles[move.To.PileIndex],
-            PileKind.Tableau => board.TableauPiles[move.To.PileIndex],
+            PileKind.FaceDown => position.FaceDownPile,
+            PileKind.FaceUp => position.FaceUpPile,
+            PileKind.Foundation => position.FoundationPiles[move.To.PileIndex],
+            PileKind.Tableau => position.TableauPiles[move.To.PileIndex],
             _ => throw new ArgumentOutOfRangeException(nameof(move.To.Kind), move.To.Kind, null)
         };
 
@@ -125,7 +125,7 @@ internal static class Rules
 
             // A card on a foundation is already home. The only such move the ranks allow is
             // an ace sliding to another empty foundation, which changes nothing except which
-            // foundation is empty — and left legal it reads as a way out of a dead board.
+            // foundation is empty — and left legal it reads as a way out of a dead position.
             if (move.From.Kind == PileKind.Foundation)
             {
                 return false;
@@ -164,9 +164,9 @@ internal static class Rules
     /// what keeps the three from drifting — and the drop that follows still goes through
     /// <see cref="IsLegal"/>, which is the only thing that can approve a move.
     /// </summary>
-    public static bool CanLift(Board board, Location loc, int index)
+    public static bool CanLift(Position position, Location loc, int index)
     {
-        var pile = board.Pile(loc);
+        var pile = position.Pile(loc);
 
         if (index < 0 || index >= pile.Count)
         {
@@ -203,22 +203,22 @@ internal static class Rules
     /// included; recycling the waste is not, since it is not expressed as a move. Whether a
     /// move is any *use* is a separate question — see <see cref="IsStuck"/>.
     /// </summary>
-    public static IEnumerable<Move> LegalMoves(Board board)
+    public static IEnumerable<Move> LegalMoves(Position position)
     {
-        if (board.FaceDownPile.Count > 0)
+        if (position.FaceDownPile.Count > 0)
         {
             yield return new Move(new Location(PileKind.FaceDown, 0), new Location(PileKind.FaceUp, 0), 1);
         }
 
-        foreach (var from in Sources(board))
+        foreach (var from in Sources(position))
         {
-            var pile = board.Pile(from);
+            var pile = position.Pile(from);
 
             // Only the top card of a pile can be founded, and foundations take one at a time.
-            foreach (var to in Destinations(board, PileKind.Foundation))
+            foreach (var to in Destinations(position, PileKind.Foundation))
             {
                 var move = new Move(from, to, 1);
-                if (IsLegal(board, move))
+                if (IsLegal(position, move))
                 {
                     yield return move;
                 }
@@ -229,10 +229,10 @@ internal static class Rules
             int deepest = from.Kind == PileKind.Tableau ? FirstFaceUp(pile) : pile.Count - 1;
             for (int i = deepest; i >= 0 && i < pile.Count; i++)
             {
-                foreach (var to in Destinations(board, PileKind.Tableau))
+                foreach (var to in Destinations(position, PileKind.Tableau))
                 {
                     var move = new Move(from, to, pile.Count - i);
-                    if (IsLegal(board, move))
+                    if (IsLegal(position, move))
                     {
                         yield return move;
                     }
@@ -242,36 +242,36 @@ internal static class Rules
     }
 
     /// <summary>
-    /// True when the game cannot be finished from here: no move on the board does anything,
+    /// True when the game cannot be finished from here: no move on the position does anything,
     /// and no card still in the stock or waste can be played either.
     ///
     /// The deck has to be looked through rather than just asked for its top card, because
     /// turning the stock is always available and recycling the waste is unlimited — so every
-    /// card down there will come round again, and the board is only really frozen if none of
+    /// card down there will come round again, and the position is only really frozen if none of
     /// them has a home. Conservative by design: any move a player could actually make,
     /// including pulling a card back off a foundation, counts as a move.
     /// </summary>
-    public static bool IsStuck(Board board)
+    public static bool IsStuck(Position position)
     {
-        foreach (var move in LegalMoves(board))
+        foreach (var move in LegalMoves(position))
         {
-            if (IsProgress(board, move))
+            if (IsProgress(position, move))
             {
                 return false;
             }
         }
 
-        foreach (var card in board.FaceDownPile)
+        foreach (var card in position.FaceDownPile)
         {
-            if (HasHome(board, card))
+            if (HasHome(position, card))
             {
                 return false;
             }
         }
 
-        foreach (var card in board.FaceUpPile)
+        foreach (var card in position.FaceUpPile)
         {
-            if (HasHome(board, card))
+            if (HasHome(position, card))
             {
                 return false;
             }
@@ -283,9 +283,9 @@ internal static class Rules
     /// <summary>
     /// Whether a legal move actually changes the position. Turning the stock only cycles the
     /// deck, and moving a whole face-up column to an empty one just relabels which column is
-    /// empty — neither is a way out of a dead board.
+    /// empty — neither is a way out of a dead position.
     /// </summary>
-    private static bool IsProgress(Board board, Move move)
+    private static bool IsProgress(Position position, Move move)
     {
         if (move.From.Kind == PileKind.FaceDown)
         {
@@ -294,25 +294,25 @@ internal static class Rules
 
         return !(move.From.Kind == PileKind.Tableau &&
                  move.To.Kind == PileKind.Tableau &&
-                 move.Count == board.Pile(move.From).Count &&
-                 board.Pile(move.To).Count == 0);
+                 move.Count == position.Pile(move.From).Count &&
+                 position.Pile(move.To).Count == 0);
     }
 
-    /// <summary>Whether a card not yet in play could be placed somewhere as the board stands.</summary>
-    private static bool HasHome(Board board, Card card)
+    /// <summary>Whether a card not yet in play could be placed somewhere as the position stands.</summary>
+    private static bool HasHome(Position position, Card card)
     {
-        foreach (var to in Destinations(board, PileKind.Foundation))
+        foreach (var to in Destinations(position, PileKind.Foundation))
         {
-            var pile = board.Pile(to);
+            var pile = position.Pile(to);
             if (CanFound(card, pile.Count > 0 ? pile[^1] : null))
             {
                 return true;
             }
         }
 
-        foreach (var to in Destinations(board, PileKind.Tableau))
+        foreach (var to in Destinations(position, PileKind.Tableau))
         {
-            var pile = board.Pile(to);
+            var pile = position.Pile(to);
             if (CanStack(card, pile.Count > 0 ? pile[^1] : null))
             {
                 return true;
@@ -337,18 +337,18 @@ internal static class Rules
     }
 
     /// <summary>Piles a move can come from: the waste, the tableau, and a foundation.</summary>
-    private static IEnumerable<Location> Sources(Board board)
+    private static IEnumerable<Location> Sources(Position position)
     {
-        if (board.FaceUpPile.Count > 0)
+        if (position.FaceUpPile.Count > 0)
         {
             yield return new Location(PileKind.FaceUp, 0);
         }
 
         foreach (var kind in new[] { PileKind.Tableau, PileKind.Foundation })
         {
-            for (int i = 0; i < board.PileCountOf(kind); i++)
+            for (int i = 0; i < position.PileCountOf(kind); i++)
             {
-                if (board.Pile(new Location(kind, i)).Count > 0)
+                if (position.Pile(new Location(kind, i)).Count > 0)
                 {
                     yield return new Location(kind, i);
                 }
@@ -356,9 +356,9 @@ internal static class Rules
         }
     }
 
-    private static IEnumerable<Location> Destinations(Board board, PileKind kind)
+    private static IEnumerable<Location> Destinations(Position position, PileKind kind)
     {
-        for (int i = 0; i < board.PileCountOf(kind); i++)
+        for (int i = 0; i < position.PileCountOf(kind); i++)
         {
             yield return new Location(kind, i);
         }

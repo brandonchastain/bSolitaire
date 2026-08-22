@@ -30,9 +30,9 @@ public class UndoTests
         Assert.True(board.CanUndo);
         Assert.True(board.Undo());
 
-        Assert.Single(board.TableauPiles[0]);
-        Assert.Single(board.TableauPiles[1]);
-        Assert.Equal(Rank.Nine, board.TableauPiles[0][0].Rank);
+        Assert.Single(board.Position.TableauPiles[0]);
+        Assert.Single(board.Position.TableauPiles[1]);
+        Assert.Equal(Rank.Nine, board.Position.TableauPiles[0][0].Rank);
     }
 
     [Fact]
@@ -46,10 +46,10 @@ public class UndoTests
         board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         board.MakeMove(new Move(Tableau(0), Tableau(1), 1));
-        Assert.True(board.TableauPiles[0][0].IsFaceUp);
+        Assert.True(board.Position.TableauPiles[0][0].IsFaceUp);
 
         board.Undo();
-        Assert.False(board.TableauPiles[0][0].IsFaceUp);
+        Assert.False(board.Position.TableauPiles[0][0].IsFaceUp);
     }
 
     [Fact]
@@ -60,14 +60,14 @@ public class UndoTests
         board.Position.Place(Waste, Up(Suit.Spades, Rank.Three));
 
         Assert.True(board.RecycleWaste());
-        Assert.Equal(2, board.FaceDownPile.Count);
+        Assert.Equal(2, board.Position.FaceDownPile.Count);
 
         board.Undo();
 
-        Assert.Empty(board.FaceDownPile);
-        Assert.Equal(2, board.FaceUpPile.Count);
-        Assert.True(board.FaceUpPile[^1].IsFaceUp);
-        Assert.Equal(Rank.Three, board.FaceUpPile[^1].Rank);
+        Assert.Empty(board.Position.FaceDownPile);
+        Assert.Equal(2, board.Position.FaceUpPile.Count);
+        Assert.True(board.Position.FaceUpPile[^1].IsFaceUp);
+        Assert.Equal(Rank.Three, board.Position.FaceUpPile[^1].Rank);
     }
 
     [Fact]
@@ -145,7 +145,7 @@ public class UndoTests
         Assert.True(game.CanUndo);
         game.OnKeyDown("KeyZ");
 
-        Assert.Single(game.Board.TableauPiles[0]);
+        Assert.Single(game.Board.Position.TableauPiles[0]);
         Assert.False(game.CanUndo);
     }
 
@@ -163,7 +163,7 @@ public class UndoTests
         var button = game.Layout.UndoButton;
         game.OnPointerDown(button.X + button.W / 2, button.Y + button.H / 2);
 
-        Assert.Single(game.Board.TableauPiles[0]);
+        Assert.Single(game.Board.Position.TableauPiles[0]);
     }
 
     [Fact]

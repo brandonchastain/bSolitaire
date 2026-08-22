@@ -589,9 +589,9 @@ internal sealed class CanvasDrawer : IGameDrawer
         await Fill(Felt);
         await ctx.FillRectAsync(0, 0, layout.Width, layout.Height);
 
-        foreach (var kind in Board.AllKinds)
+        foreach (var kind in Position.AllKinds)
         {
-            int pileCount = board.PileCountOf(kind);
+            int pileCount = board.Position.PileCountOf(kind);
             for (int pileIndex = 0; pileIndex < pileCount; pileIndex++)
             {
                 var loc = new Location(kind, pileIndex);
@@ -607,7 +607,7 @@ internal sealed class CanvasDrawer : IGameDrawer
     /// </summary>
     private async ValueTask DrawPile(Board board, BoardLayout layout, Location location, DragState? drag)
     {
-        var pile = board.Pile(location);
+        var pile = board.Position.Pile(location);
 
         int visibleCount = drag != null && drag.From == location
             ? Math.Min(pile.Count, drag.Index)
@@ -1105,7 +1105,7 @@ internal sealed class CanvasDrawer : IGameDrawer
     /// </summary>
     private async ValueTask DrawDropTarget(Board board, BoardLayout layout, Location loc)
     {
-        var pile = board.Pile(loc);
+        var pile = board.Position.Pile(loc);
         var card = pile.Count > 0 ? layout.CardRect(loc, pile.Count - 1) : layout.EmptySlot(loc);
         double width = Math.Max(2, card.W * 0.035);
 
@@ -1337,7 +1337,7 @@ internal sealed class CanvasDrawer : IGameDrawer
     /// </summary>
     private async ValueTask DrawHover(Board board, BoardLayout layout, Location loc, int index)
     {
-        var pile = board.Pile(loc);
+        var pile = board.Position.Pile(loc);
         if (index < 0 || index >= pile.Count)
         {
             return;
