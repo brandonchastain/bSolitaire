@@ -5,7 +5,7 @@ namespace BSolitaire.Game;
 /// of solitaire's rules — the board plays exactly the same whether or not anyone is keeping
 /// score — so it sits outside the game and listens instead.
 /// </summary>
-public sealed class ScoreKeeper
+internal sealed class ScoreKeeper
 {
     private readonly Board board;
 

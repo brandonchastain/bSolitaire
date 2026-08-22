@@ -4,7 +4,7 @@ namespace BSolitaire.Game;
 /// A card part-way between two places, ready to be drawn. Everything here is already in
 /// board pixels, so the drawer paints it and asks nothing.
 /// </summary>
-public readonly record struct CardInFlight(Card Card, Rect Rect, bool FaceUp);
+internal readonly record struct CardInFlight(Card Card, Rect Rect, bool FaceUp);
 
 /// <summary>
 /// Turns the board's <see cref="Motion"/>s into cards moving across the felt. This is the
@@ -16,7 +16,7 @@ public readonly record struct CardInFlight(Card Card, Rect Rect, bool FaceUp);
 /// twice: once at its destination, where it now belongs, and once in the air. So a flight
 /// also holds its destination back — see <see cref="HiddenFrom"/> — until it lands.
 /// </summary>
-public sealed class Animator
+internal sealed class Animator
 {
     /// <summary>
     /// The longest a card may take to cross the board, however far it is going. Short: this

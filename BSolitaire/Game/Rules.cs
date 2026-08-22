@@ -1,7 +1,7 @@
 namespace BSolitaire.Game;
 
 
-public static class Rules
+internal static class Rules
 {
     public static bool CanStack(Card moving, Card? onto)
     {

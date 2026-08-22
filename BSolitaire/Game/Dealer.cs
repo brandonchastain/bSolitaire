@@ -1,6 +1,6 @@
 namespace BSolitaire.Game;
 
-public sealed class Dealer
+internal sealed class Dealer
 {
     /// <summary>
     /// Shuffles a deck into the stock and deals it out: pile one gets a card, pile two gets

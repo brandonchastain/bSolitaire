@@ -7,7 +7,7 @@ namespace BSolitaire.Tests;
 /// so almost every test here starts from an empty one and puts down exactly the cards the
 /// rule under test is about.
 /// </summary>
-public static class Positions
+internal static class Positions
 {
     public static Location Stock => new(PileKind.FaceDown, 0);
 

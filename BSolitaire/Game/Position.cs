@@ -8,7 +8,7 @@ namespace BSolitaire.Game;
 /// <see cref="Take"/> and <see cref="Place"/>. That is what keeps the splice separable from the
 /// bookkeeping in <see cref="Board.MakeMove"/> that has to accompany it.
 /// </summary>
-public sealed class Position
+internal sealed class Position
 {
     public const int FoundationCount = 4;
     public const int TableauCount = 7;

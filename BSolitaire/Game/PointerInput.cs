@@ -5,7 +5,7 @@ namespace BSolitaire.Game;
 /// dragging — the drawer skips them and paints them at the cursor instead — so abandoning
 /// a drag needs no undo, and an illegal drop snaps back for free.
 /// </summary>
-public sealed class DragState
+internal sealed class DragState
 {
     public required Location From { get; init; }
 
@@ -33,7 +33,7 @@ public sealed class DragState
 /// what the rules are (<see cref="Rules"/>), how a move is applied (<see cref="Board"/>),
 /// or how any of it is drawn.
 /// </summary>
-public sealed class PointerInput
+internal sealed class PointerInput
 {
     /// <summary>How far the pointer must travel before a press counts as a drag, not a tap.</summary>
     private const double DragThreshold = 4;

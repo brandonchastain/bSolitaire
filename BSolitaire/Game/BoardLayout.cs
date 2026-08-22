@@ -1,6 +1,6 @@
 namespace BSolitaire.Game;
 
-public readonly record struct Rect(double X, double Y, double W, double H)
+internal readonly record struct Rect(double X, double Y, double W, double H)
 {
     public bool Contains(double x, double y) => x >= X && x < X + W && y >= Y && y < Y + H;
 }
@@ -8,7 +8,7 @@ public readonly record struct Rect(double X, double Y, double W, double H)
 /// <summary>
 /// Handles board geometry and layout.
 /// </summary>
-public sealed class BoardLayout
+internal sealed class BoardLayout
 {
     /// <summary>Playing-card proportions, height over width.</summary>
     private const double CardAspect = 1.4;

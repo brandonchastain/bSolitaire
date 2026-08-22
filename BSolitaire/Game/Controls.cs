@@ -5,7 +5,7 @@ namespace BSolitaire.Game;
 /// <see cref="PointerInput"/>; these are the handful of things a key or an on-felt button can
 /// ask the session to do, and <see cref="Solitaire"/> is what carries them out.
 /// </summary>
-public enum PlayerCommand
+internal enum PlayerCommand
 {
     None,
     FastForward,
@@ -25,7 +25,7 @@ public enum PlayerCommand
 /// <see cref="PlayerCommand.FastForward"/> and stops there. Whether that is allowed, and what
 /// it does, belongs to the session.
 /// </summary>
-public sealed class Controls
+internal sealed class Controls
 {
     private readonly PointerInput input;
     private readonly BoardLayout layout;

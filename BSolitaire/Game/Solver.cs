@@ -3,7 +3,7 @@
 namespace BSolitaire.Game;
 
 /// <summary>What a search found out about a position.</summary>
-public enum SolveResult
+internal enum SolveResult
 {
     /// <summary>Still looking.</summary>
     Searching,
@@ -19,7 +19,7 @@ public enum SolveResult
 }
 
 /// <summary>How much the search is allowed to spend before it gives up and answers Unknown.</summary>
-public readonly record struct SolverBudget(int States, int Nodes)
+internal readonly record struct SolverBudget(int States, int Nodes)
 {
     /// <summary>
     /// Sized to answer within a second or two of idle time, because this runs after every
@@ -58,7 +58,7 @@ public readonly record struct SolverBudget(int States, int Nodes)
 /// <see cref="SolveResult.Unknown"/>, never a wrong answer — <see cref="SolveResult.Unwinnable"/>
 /// is only ever reported after the entire tree below the position has been examined.
 /// </summary>
-public sealed class Solver
+internal sealed class Solver
 {
     /// <summary>How often the clock is read, in positions. Reading it per position is
     /// itself measurable at these speeds; a few hundred is far finer than any deadline

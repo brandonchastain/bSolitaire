@@ -3,7 +3,7 @@ namespace BSolitaire.Game;
 /// <summary>
 /// One card bouncing its way off the bottom of the screen.
 /// </summary>
-public sealed class FallingCard
+internal sealed class FallingCard
 {
     public required Card Card { get; init; }
 
@@ -24,7 +24,7 @@ public sealed class FallingCard
 /// answers no question — so it lives on its own, and the drawer is what knows that the trail
 /// is drawn by simply never rubbing the last frame out.
 /// </summary>
-public sealed class WinCascade
+internal sealed class WinCascade
 {
     /// <summary>Downward acceleration, in board pixels per frame per frame. Tuned against a
     /// card height rather than a screen, so it falls the same way at any size.</summary>

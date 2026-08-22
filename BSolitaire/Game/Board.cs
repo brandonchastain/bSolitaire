@@ -5,7 +5,7 @@ namespace BSolitaire.Game;
 /// anyone last looked. <see cref="Position"/> holds the cards; this holds everything that has
 /// to happen when they move.
 /// </summary>
-public class Board
+internal class Board
 {
     public static readonly PileKind[] AllKinds = Position.AllKinds;
 

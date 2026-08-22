@@ -6,7 +6,7 @@ namespace BSolitaire.Game;
 /// reached, only that one eventually arrives, and the search does not care which frame it is
 /// running in. Splitting the two out means neither has to hold the other's bookkeeping.
 /// </summary>
-public sealed class Analyzer
+internal sealed class Analyzer
 {
     /// <summary>
     /// A ceiling on positions per frame as well, so a machine fast enough to burn the whole

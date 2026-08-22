@@ -1,7 +1,7 @@
 namespace BSolitaire.Game;
 
 /// <summary>What kind of movement a <see cref="Motion"/> describes.</summary>
-public enum MotionKind
+internal enum MotionKind
 {
     /// <summary>A card travelled from one pile to another.</summary>
     Move,
@@ -28,7 +28,7 @@ public enum MotionKind
 /// The card's own state is already the arrival state, so this is the only record that it
 /// spent the first half of the trip showing its back.
 /// </param>
-public readonly record struct Motion(
+internal readonly record struct Motion(
     MotionKind Kind,
     Card Card,
     Location From,

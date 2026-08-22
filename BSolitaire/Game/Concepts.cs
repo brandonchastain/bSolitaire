@@ -1,7 +1,7 @@
 namespace BSolitaire.Game;
 
 /// <summary>Where a game has got to. Anything other than <see cref="Playing"/> is over.</summary>
-public enum GameState
+internal enum GameState
 {
     Playing,
 
@@ -21,7 +21,7 @@ public enum GameState
     Unwinnable
 }
 
-public enum PileKind
+internal enum PileKind
 {
     FaceDown,
     FaceUp,
@@ -29,7 +29,7 @@ public enum PileKind
     Tableau
 }
 
-public enum Suit
+internal enum Suit
 {
     Clubs,
     Diamonds,
@@ -37,7 +37,7 @@ public enum Suit
     Spades
 }
 
-public enum Rank
+internal enum Rank
 {
     Ace = 1,
     Two,
@@ -54,6 +54,6 @@ public enum Rank
     King
 }
 
-public readonly record struct Location(PileKind Kind, int PileIndex);
+internal readonly record struct Location(PileKind Kind, int PileIndex);
 
-public readonly record struct Move(Location From, Location To, int Count);
+internal readonly record struct Move(Location From, Location To, int Count);

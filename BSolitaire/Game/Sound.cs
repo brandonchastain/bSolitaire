@@ -6,7 +6,7 @@ namespace BSolitaire.Game;
 /// like. Same seam as <see cref="IGameDrawer"/>, for the same reason: the rules stay
 /// unit-testable and know nothing about a browser.
 /// </summary>
-public enum Sound
+internal enum Sound
 {
     /// <summary>A fresh deal: one riffle, not twenty-eight card noises.</summary>
     Deal,
