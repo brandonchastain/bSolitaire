@@ -155,45 +155,6 @@ internal class Board
     }
 
     /// <summary>
-    /// The foundation <paramref name="card"/> belongs on, or null if it has no home yet. A card
-    /// that continues a started pile goes there; an ace prefers the pile matching its suit and
-    /// settles for any empty one, so the first four aces still end up on four separate piles
-    /// whatever order they arrive in.
-    /// </summary>
-    public Location? FoundationFor(Card card)
-    {
-        for (int i = 0; i < Position.FoundationCount; i++)
-        {
-            var pile = Position.FoundationPiles[i];
-            if (pile.Count > 0 && Rules.CanFound(card, pile[^1]))
-            {
-                return new Location(PileKind.Foundation, i);
-            }
-        }
-
-        if (!Rules.CanFound(card, null))
-        {
-            return null;
-        }
-
-        int preferred = (int)card.Suit;
-        if (Position.FoundationPiles[preferred].Count == 0)
-        {
-            return new Location(PileKind.Foundation, preferred);
-        }
-
-        for (int i = 0; i < Position.FoundationCount; i++)
-        {
-            if (Position.FoundationPiles[i].Count == 0)
-            {
-                return new Location(PileKind.Foundation, i);
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
     /// Sends one more card home, or turns the stock over to reach one. One card per call rather
     /// than the whole finish at once, so the caller can spread it over frames and the player
     /// gets to watch it happen.
@@ -203,13 +164,13 @@ internal class Board
         for (int i = 0; i < Position.TableauCount; i++)
         {
             var pile = Position.TableauPiles[i];
-            if (pile.Count > 0 && FoundationFor(pile[^1]) is { } home)
+            if (pile.Count > 0 && Rules.FoundationFor(Position, pile[^1]) is { } home)
             {
                 return MakeMove(new Move(new Location(PileKind.Tableau, i), home, 1));
             }
         }
 
-        if (Position.FaceUpPile.Count > 0 && FoundationFor(Position.FaceUpPile[^1]) is { } wasteHome)
+        if (Position.FaceUpPile.Count > 0 && Rules.FoundationFor(Position, Position.FaceUpPile[^1]) is { } wasteHome)
         {
             return MakeMove(new Move(new Location(PileKind.FaceUp, 0), wasteHome, 1));
         }

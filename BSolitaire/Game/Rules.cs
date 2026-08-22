@@ -281,6 +281,44 @@ internal static class Rules
     }
 
     /// <summary>
+    /// The foundation <paramref name="card"/> belongs on, or null if it has no home yet. A card
+    /// that continues a started pile goes there; an ace prefers the pile matching its suit and
+    /// settles for any empty one, so the first four aces still end up on four separate piles
+    /// whatever order they arrive in.
+    /// </summary>
+    public static Location? FoundationFor(Position position, Card card)
+    {
+        for (int i = 0; i < Position.FoundationCount; i++)
+        {
+            var pile = position.FoundationPiles[i];
+            if (pile.Count > 0 && CanFound(card, pile[^1]))
+            {
+                return new Location(PileKind.Foundation, i);
+            }
+        }
+
+        if (!CanFound(card, null))
+        {
+            return null;
+        }
+
+        int preferred = (int)card.Suit;
+        if (position.FoundationPiles[preferred].Count == 0)
+        {
+            return new Location(PileKind.Foundation, preferred);
+        }
+
+        for (int i = 0; i < Position.FoundationCount; i++)
+        {
+            if (position.FoundationPiles[i].Count == 0)
+            {
+                return new Location(PileKind.Foundation, i);
+            }
+        }
+
+        return null;
+    }
+    /// <summary>
     /// Whether a legal move actually changes the position. Turning the stock only cycles the
     /// deck, and moving a whole face-up column to an empty one just relabels which column is
     /// empty — neither is a way out of a dead position.
@@ -363,4 +401,5 @@ internal static class Rules
             yield return new Location(kind, i);
         }
     }
+
 }

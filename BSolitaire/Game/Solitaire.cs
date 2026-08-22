@@ -77,13 +77,8 @@ internal sealed class Solitaire : ISolitaireView
     /// </summary>
     public bool CanUndo => Board.CanUndo && !fastForward.IsRunning;
 
-    /// <summary>
-    /// Whether the end-of-game panel is up. A won game holds it back until the cards have
-    /// finished falling: the celebration is the reward, and putting a dialog over it the
-    /// instant it starts is asking the player what they want next before they have seen what
-    /// they got.
-    /// </summary>
-    public bool ShowBanner => State != GameState.Playing && !cascade.IsRunning;
+    /// <summary>Whether the cards are still coming down after a win.</summary>
+    public bool Celebrating => cascade.IsRunning;
 
     /// <summary>
     /// The pile the pointer could pick up from right now, or null if it could not pick up
@@ -249,6 +244,12 @@ internal sealed class Solitaire : ISolitaireView
 
     /// <summary>Renames the player and reports the change so it gets saved.</summary>
     public void SetNickname(string nickname) => Guarded(() => scores.SetNickname(nickname));
+
+    /// <inheritdoc cref="ScoreKeeper.ToJson"/>
+    public string ScoreJson() => scores.ToJson();
+
+    /// <inheritdoc cref="ScoreKeeper.Load"/>
+    public bool LoadScore(string json) => scores.Load(json);
 
     /// <summary>Abandons the current game and deals a new one.</summary>
     public void Reset()

@@ -495,7 +495,10 @@ internal sealed class CanvasDrawer : IGameDrawer
             await ctx.SetShadowOffsetYAsync(0);
         }
 
-        if (game.ShowBanner)
+        // A won game holds the panel back until the cards have finished falling: the
+        // celebration is the reward, and putting a dialog over it the instant it starts asks
+        // the player what they want next before they have seen what they got.
+        if (game.State != GameState.Playing && !game.Celebrating)
         {
             // The panel dims the whole board, cached controls and all, so they are drawn
             // again on top of it — turning the fanfare off is exactly what a player wants to

@@ -321,11 +321,11 @@ public class AnimationTests
 
         Assert.Equal(GameState.Won, game.State);
         Assert.NotEmpty(game.Falling);
-        Assert.False(game.ShowBanner);
+        Assert.True(game.Celebrating);
 
         // A press cuts it short, and then the board asks what the player wants next.
         game.OnPointerDown(Width / 2, Height / 2);
-        Assert.True(game.ShowBanner);
+        Assert.False(game.Celebrating);
     }
 
     private static (Board Board, BoardLayout Layout, Animator Animator) Table()

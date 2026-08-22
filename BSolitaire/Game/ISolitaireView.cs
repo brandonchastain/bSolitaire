@@ -32,7 +32,7 @@ internal interface ISolitaireView
 
     bool CanFastForward { get; }
 
-    bool ShowBanner { get; }
+    bool Celebrating { get; }
 
     bool ShowStats { get; }
 
