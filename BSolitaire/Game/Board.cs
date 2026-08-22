@@ -266,7 +266,7 @@ public partial class Board
     /// The same pile, writable. Private on purpose: moving a card is never only a splice —
     /// see <see cref="MakeMove"/> for the five other things that go with it — so nothing
     /// outside this class gets to hold a pile it could edit. The tests need to put a position
-    /// down by hand and so reach this too; that half of the class is in Board.Testing.cs.
+    /// down by hand and so reach this too; that half of the class is in Testing/Board.Arrangement.cs.
     /// </summary>
     private List<Card> Mutable(Location loc) => loc.Kind switch
     {

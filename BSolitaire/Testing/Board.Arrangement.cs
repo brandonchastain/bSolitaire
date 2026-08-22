@@ -7,11 +7,16 @@ namespace BSolitaire.Game;
 ///
 /// This is deliberately not a general "build me a position" API. Nothing in the app ever
 /// starts from anything but a fresh deal, and inventing an interface for arbitrary positions
-/// would be surface area bought for a caller that does not exist. It lives in its own file so
-/// that reading Board.cs is reading the game, not the scaffolding around it.
+/// would be surface area bought for a caller that does not exist. It sits in its own folder so
+/// that reading Game/ is reading the game, not the scaffolding around it.
 ///
-/// Being here changes no accessibility: these are still internal, and still callable from
-/// anywhere in the assembly. The file boundary is a signal about intent, not a wall.
+/// The folder is all that separates them. A partial class has to share the namespace and the
+/// assembly of the half it completes, and that is the point: this is the only place private
+/// Mutable can be reached from, so arranging a position cannot be moved to the test project
+/// without opening that back up to everything.
+///
+/// Being here changes no accessibility either: these are still internal, and still callable
+/// from anywhere in the assembly. The boundary is a signal about intent, not a wall.
 /// </summary>
 public partial class Board
 {
