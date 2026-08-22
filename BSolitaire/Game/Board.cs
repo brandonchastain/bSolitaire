@@ -264,10 +264,11 @@ public class Board
 
     /// <summary>
     /// Puts cards on a pile, on top of whatever is already there. This is how a position is
-    /// arranged rather than played — the tests use it to say what a board starts as, and it
-    /// deliberately does none of what <see cref="MakeMove"/> does, because nothing has moved.
-    /// The whole board is marked for repaint on the way out, since a position put down by
-    /// hand is not a change anyone can name the piles for.
+    /// arranged rather than played — the tests use it to say what a board starts as — and it
+    /// deliberately does none of what <see cref="MakeMove"/> does: there is no undo step to
+    /// record, no motion to animate, and no sound to play, because nothing moved. The pile it
+    /// touched is marked for repaint, which is the one thing a card appearing does share with
+    /// a card arriving.
     /// </summary>
     internal void Place(Location loc, params Card[] cards) => Place(loc, (IEnumerable<Card>)cards);
 
@@ -275,28 +276,32 @@ public class Board
     internal void Place(Location loc, IEnumerable<Card> cards)
     {
         Mutable(loc).AddRange(cards);
-        AllDirty = true;
+        MarkDirty(loc);
     }
 
     /// <summary>Takes every card off the board, leaving thirteen empty piles. The counterpart
     /// to <see cref="Place"/>: a test says what it wants on the board by clearing what the
-    /// deal put there and putting down only the cards its rule is about.</summary>
+    /// deal put there and putting down only the cards its rule is about. This is the one
+    /// arrangement broad enough to be worth <see cref="AllDirty"/> rather than naming piles.
+    /// </summary>
     internal void Strip()
     {
         foreach (var kind in AllKinds)
         {
             for (int i = 0; i < PileCountOf(kind); i++)
             {
-                Strip(new Location(kind, i));
+                Mutable(new Location(kind, i)).Clear();
             }
         }
+
+        AllDirty = true;
     }
 
     /// <summary>Takes every card off one pile.</summary>
     internal void Strip(Location loc)
     {
         Mutable(loc).Clear();
-        AllDirty = true;
+        MarkDirty(loc);
     }
 
     /// <summary>
