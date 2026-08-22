@@ -115,17 +115,9 @@
         {
             // Pointer motion arrives with the frame rather than as its own event, already
             // coalesced to the newest position — see js/game.js.
-            if (moved)
-            {
-                game.OnPointerMove(x, y);
-            }
+            game.Update(TimeSpan.FromMilliseconds(timestampMs), moved ? new PointerAt(x, y) : null);
 
-            game.Update(TimeSpan.FromMilliseconds(timestampMs));
-
-            // A name is worth asking for once there is something to put it against, so the
-            // first win is what asks — not the first deal, which interrupts a player who has
-            // not yet decided they care.
-            if (game.State == GameState.Won && !nicknameAsked && string.IsNullOrWhiteSpace(game.Score.Nickname))
+            if (game.WantsNickname && !nicknameAsked)
             {
                 AskNickname();
             }

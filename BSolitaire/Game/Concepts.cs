@@ -56,4 +56,8 @@ internal enum Rank
 
 internal readonly record struct Location(PileKind Kind, int PileIndex);
 
+/// <summary>Where the pointer is, as read once per frame. Motion is continuous, so it arrives
+/// with the frame already coalesced to its newest position rather than as its own event.</summary>
+internal readonly record struct PointerAt(double X, double Y);
+
 internal readonly record struct Move(Location From, Location To, int Count);

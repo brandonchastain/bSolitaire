@@ -354,17 +354,19 @@ public class PointerTests
     }
 
     [Fact]
-    public void TheBannersButtonDealsAgain()
+    public void TheFeltUnderTheBannerHearsNothing()
     {
         var (board, layout, input) = Table();
         board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
         board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Queen));
         board.MakeMove(new Move(Tableau(1), Tableau(0), 1));
 
-        Tap(input, Centre(layout.NewGameButton));
+        // The panel's own button belongs to Controls now; all this has to do is keep the
+        // pile underneath from treating a tap meant for the panel as a tap on a card.
+        Tap(input, Centre(layout.Banner));
 
-        Assert.Equal(GameState.Playing, board.State);
-        Assert.Equal(24, board.Position.FaceDownPile.Count);
+        Assert.Null(input.HoverPile);
+        Assert.Equal(GameState.Stuck, board.State);
     }
 
     /// <summary>A press and release without travel.</summary>
