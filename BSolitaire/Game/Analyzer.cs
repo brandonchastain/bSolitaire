@@ -37,9 +37,6 @@ public sealed class Analyzer
     /// <summary>Positions the search has examined on the current board.</summary>
     public int Nodes => solver?.Nodes ?? 0;
 
-    /// <summary>Distinct positions the search is holding on to.</summary>
-    public int States => solver?.States ?? 0;
-
     /// <summary>
     /// Gives the search its slice of one frame, and reports whether the board changed as a
     /// result — the only way it can is a position being proved dead.

@@ -138,10 +138,10 @@ public sealed class WinCascade
     /// </summary>
     private void Launch()
     {
-        for (int attempt = 0; attempt < board.FoundationPiles.Length; attempt++)
+        for (int attempt = 0; attempt < board.FoundationPiles.Count; attempt++)
         {
             int index = nextFoundation;
-            nextFoundation = (nextFoundation + 1) % board.FoundationPiles.Length;
+            nextFoundation = (nextFoundation + 1) % board.FoundationPiles.Count;
 
             var pile = board.FoundationPiles[index];
             int depth = taken[index];

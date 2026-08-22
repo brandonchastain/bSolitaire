@@ -1,0 +1,10 @@
+root = true
+
+[*.cs]
+dotnet_analyzer_diagnostic.severity = none
+
+# Member ordering: fields, then constructors, then properties, then methods.
+dotnet_diagnostic.SA1201.severity = warning
+dotnet_diagnostic.SA1202.severity = warning
+dotnet_diagnostic.SA1203.severity = warning
+dotnet_diagnostic.SA1204.severity = warning

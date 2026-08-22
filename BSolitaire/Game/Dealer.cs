@@ -1,24 +1,25 @@
 namespace BSolitaire.Game;
 
-public class Dealer
+public sealed class Dealer
 {
     /// <summary>
-    /// Deal cards from facedown into tableau piles. The first pile gets 1 card, the second gets 2, and so on, up to the seventh pile which gets 7 cards. The top card of each tableau pile is turned face up.
-    /// Dealing must happen in order of tableau piles, one card at a time, from the top of the facedown pile.
+    /// Shuffles a deck into the stock and deals it out: pile one gets a card, pile two gets
+    /// two, and so on to seven, taken from the top of the stock a card at a time so the last
+    /// card onto each pile is the one showing.
     /// </summary>
-    public void Deal(List<Card> faceDownPile, List<Card>[] tableauPiles)
+    public void Deal(Position position)
     {
-        faceDownPile.AddRange(BuildDefaultDeck());
+        var stock = new Location(PileKind.FaceDown, 0);
+        position.Place(stock, BuildDefaultDeck());
         // Deal left-to-right, adding one more card to each tableau pile than the previous one.
         // Each new card is taken from the top of the stock and placed on the current pile,
         // so the last card dealt to a pile is the one on top.
-        for (int row = 0; row < tableauPiles.Length; row++)
+        for (int row = 0; row < Position.TableauCount; row++)
         {
-            for (int pileIndex = row; pileIndex < tableauPiles.Length; pileIndex++)
+            for (int pileIndex = row; pileIndex < Position.TableauCount; pileIndex++)
             {
-                var card = faceDownPile[^1];
-                faceDownPile.RemoveAt(faceDownPile.Count - 1);
-                tableauPiles[pileIndex].Add(card);
+                var card = position.Take(stock, 1)[0];
+                position.Place(new Location(PileKind.Tableau, pileIndex), card);
 
                 if (pileIndex == row)
                 {

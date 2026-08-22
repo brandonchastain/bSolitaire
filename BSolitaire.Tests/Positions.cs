@@ -19,25 +19,12 @@ public static class Positions
 
     public static Card Down(Suit suit, Rank rank) => new(suit, rank);
 
-    /// <summary>A board with no cards anywhere. Every pile is a plain list, so emptying them
-    /// is all it takes — and a position of three cards is far easier to reason about than
-    /// fifty-two in an order nobody chose.</summary>
+    /// <summary>A board with no cards anywhere. A position of three cards is far easier to
+    /// reason about than fifty-two in an order nobody chose.</summary>
     public static Board Empty()
     {
         var board = new Board();
-        board.FaceDownPile.Clear();
-        board.FaceUpPile.Clear();
-
-        foreach (var pile in board.FoundationPiles)
-        {
-            pile.Clear();
-        }
-
-        foreach (var pile in board.TableauPiles)
-        {
-            pile.Clear();
-        }
-
+        board.Position.Strip();
         return board;
     }
 
@@ -56,10 +43,10 @@ public static class Positions
 
             for (int rank = (int)Rank.Ace; rank <= (int)Rank.Queen; rank++)
             {
-                board.FoundationPiles[i].Add(Up(suit, (Rank)rank));
+                board.Position.Place(Foundation(i), Up(suit, (Rank)rank));
             }
 
-            board.TableauPiles[i].Add(Up(suit, Rank.King));
+            board.Position.Place(Tableau(i), Up(suit, Rank.King));
         }
 
         return board;

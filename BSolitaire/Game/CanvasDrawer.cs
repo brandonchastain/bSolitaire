@@ -7,7 +7,7 @@ namespace BSolitaire.Game;
 /// <summary>
 /// Draws the game to a 2D canvas.
 /// </summary>
-public class CanvasDrawer : IGameDrawer
+internal sealed class CanvasDrawer : IGameDrawer
 {
     /// <summary>Whichever context is being drawn into right now: the visible board, or the
     /// off-screen copy the static part of the picture is kept on.</summary>
@@ -48,7 +48,7 @@ public class CanvasDrawer : IGameDrawer
 
     /// <summary>The game being drawn this frame. Held because the pile-level drawing has to
     /// ask which of its cards are currently in the air somewhere else.</summary>
-    private Solitaire? current;
+    private ISolitaireView? current;
 
     // Palette. Warm paper and a soft edge rather than white on hard black: a pure-white
     // card outlined in black is the single thing that most makes a drawn deck look drawn.
@@ -291,7 +291,7 @@ public class CanvasDrawer : IGameDrawer
         ctx = board;
     }
 
-    public async ValueTask Draw(Solitaire game)
+    public async ValueTask Draw(ISolitaireView game)
     {
         Board board = game.Board;
         BoardLayout layout = game.Layout;
@@ -457,9 +457,9 @@ public class CanvasDrawer : IGameDrawer
 
         // The stack under the pointer, outlined as one unit: a press takes all of it, so
         // highlighting only the card the cursor is literally over would understate the move.
-        if (drag == null && game.HoverPile is { } hovered)
+        if (drag == null && game.GrabbablePile is { } hovered)
         {
-            await DrawHover(board, layout, hovered, game.HoverIndex);
+            await DrawHover(board, layout, hovered, game.GrabbableIndex);
         }
 
         // Cards between piles. Under the held stack, which is the one thing the player is
@@ -715,7 +715,7 @@ public class CanvasDrawer : IGameDrawer
     /// part of the position. Painted into the cached board, so a frame that is only moving a
     /// card does not repaint a speaker.
     /// </summary>
-    private async ValueTask DrawChrome(BoardLayout layout, Solitaire game)
+    private async ValueTask DrawChrome(BoardLayout layout, ISolitaireView game)
     {
         await DrawScore(layout, game.Score);
         await DrawMute(layout, game.Muted);

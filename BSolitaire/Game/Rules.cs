@@ -323,7 +323,7 @@ public static class Rules
     }
 
     /// <summary>Index of the lowest face-up card in a pile, or the pile count if there is none.</summary>
-    private static int FirstFaceUp(List<Card> pile)
+    private static int FirstFaceUp(IReadOnlyList<Card> pile)
     {
         for (int i = 0; i < pile.Count; i++)
         {
