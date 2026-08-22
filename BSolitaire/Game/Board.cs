@@ -5,50 +5,34 @@ namespace BSolitaire.Game;
 /// </summary>
 public partial class Board
 {
-    /// <summary>Every pile kind. Cached because Enum.GetValues allocates, and the
-    /// draw loop and hit test both walk this on every frame and every pointer event.</summary>
-    public static readonly PileKind[] AllKinds = Enum.GetValues<PileKind>();
+    /// <inheritdoc cref="Position.AllKinds"/>
+    public static readonly PileKind[] AllKinds = Position.AllKinds;
     private static readonly Dealer Dealer = new();
-    private const int NumFoundationPiles = 4;
-    private const int NumTableauPiles = 7;
 
     /// <summary>Ace through king: a full foundation.</summary>
     private const int FoundationSize = 13;
 
 
-    public Board()
-    {
-        for (int i = 0; i < NumFoundationPiles; i++)
-        {
-            foundations[i] = new List<Card>();
-        }
+    public Board() => Reset();
 
-        for (int i = 0; i < NumTableauPiles; i++)
-        {
-            tableaus[i] = new List<Card>();
-        }
+    /// <summary>
+    /// Where the cards are. The board is this, plus everything that has to happen when they
+    /// move: the undo history, the change log, and the rules that decide whether they may.
+    /// </summary>
+    public Position Position { get; } = new();
 
-        Reset();
-    }
+    /// <inheritdoc cref="Position.FaceDownPile"/>
+    public IReadOnlyList<Card> FaceDownPile => Position.FaceDownPile;
 
-    // The piles are held privately and handed out read-only. Moving a card is never only a
-    // splice: see MakeMove for the undo snapshot, motion record, dirty mark, sound, and state
-    // refresh that have to go with it. A caller holding a List<Card> could do the splice and
-    // skip the rest, and nothing would complain — the board would simply be wrong afterwards.
-    private readonly List<Card> faceDown = new();
-    private readonly List<Card> faceUp = new();
-    private readonly List<Card>[] foundations = new List<Card>[NumFoundationPiles];
-    private readonly List<Card>[] tableaus = new List<Card>[NumTableauPiles];
-
-    public IReadOnlyList<Card> FaceDownPile => faceDown;
-    public IReadOnlyList<Card> FaceUpPile => faceUp;
+    /// <inheritdoc cref="Position.FaceUpPile"/>
+    public IReadOnlyList<Card> FaceUpPile => Position.FaceUpPile;
 
     /// <summary>The four foundations. No pile is reserved for a suit — whichever ace lands on a
     /// pile first claims it for the rest of the game.</summary>
-    public IReadOnlyList<IReadOnlyList<Card>> FoundationPiles => foundations;
+    public IReadOnlyList<IReadOnlyList<Card>> FoundationPiles => Position.FoundationPiles;
 
     /// <summary>The seven tableau piles, left to right.</summary>
-    public IReadOnlyList<IReadOnlyList<Card>> TableauPiles => tableaus;
+    public IReadOnlyList<IReadOnlyList<Card>> TableauPiles => Position.TableauPiles;
 
     /// <summary>
     /// Whether the game is still going, and if not, how it ended. Recomputed after every
@@ -209,20 +193,8 @@ public partial class Board
     public void Reset()
     {
         history.Clear();
-        faceDown.Clear();
-        faceUp.Clear();
-
-        foreach (var pile in foundations)
-        {
-            pile.Clear();
-        }
-
-        foreach (var pile in tableaus)
-        {
-            pile.Clear();
-        }
-
-        Dealer.Deal(faceDown, tableaus);
+        Position.Strip();
+        Dealer.Deal(Position);
         Play(Sound.Deal);
         AnnounceDeal();
         AllDirty = true;
@@ -242,9 +214,9 @@ public partial class Board
     {
         var stock = new Location(PileKind.FaceDown, 0);
 
-        for (int row = 0; row < NumTableauPiles; row++)
+        for (int row = 0; row < Position.TableauCount; row++)
         {
-            for (int pileIndex = row; pileIndex < NumTableauPiles; pileIndex++)
+            for (int pileIndex = row; pileIndex < Position.TableauCount; pileIndex++)
             {
                 var card = TableauPiles[pileIndex][row];
                 Moved(new Motion(
@@ -259,31 +231,11 @@ public partial class Board
         }
     }
 
-    /// <summary>The cards in a pile.</summary>
-    public IReadOnlyList<Card> Pile(Location loc) => Mutable(loc);
+    /// <inheritdoc cref="Position.Pile"/>
+    public IReadOnlyList<Card> Pile(Location loc) => Position.Pile(loc);
 
-    /// <summary>
-    /// The same pile, writable. Private on purpose: moving a card is never only a splice —
-    /// see <see cref="MakeMove"/> for the five other things that go with it — so nothing
-    /// outside this class gets to hold a pile it could edit. The tests need to put a position
-    /// down by hand and so reach this too; that half of the class is in Testing/Board.Arrangement.cs.
-    /// </summary>
-    private List<Card> Mutable(Location loc) => loc.Kind switch
-    {
-        PileKind.FaceDown => faceDown,
-        PileKind.FaceUp => faceUp,
-        PileKind.Foundation => foundations[loc.PileIndex],
-        PileKind.Tableau => tableaus[loc.PileIndex],
-        _ => throw new ArgumentOutOfRangeException(nameof(loc), loc.Kind, null)
-    };
-
-    /// <summary>How many piles of this kind the board has.</summary>
-    public int PileCountOf(PileKind kind) => kind switch
-    {
-        PileKind.Foundation => NumFoundationPiles,
-        PileKind.Tableau => NumTableauPiles,
-        _ => 1
-    };
+    /// <inheritdoc cref="Position.PileCountOf"/>
+    public int PileCountOf(PileKind kind) => Position.PileCountOf(kind);
 
     /// <summary>
     /// The foundation <paramref name="card"/> belongs on, or null if it has no home yet.
@@ -293,7 +245,7 @@ public partial class Board
     /// </summary>
     public Location? FoundationFor(Card card)
     {
-        for (int i = 0; i < NumFoundationPiles; i++)
+        for (int i = 0; i < Position.FoundationCount; i++)
         {
             var pile = FoundationPiles[i];
             if (pile.Count > 0 && Rules.CanFound(card, pile[^1]))
@@ -313,7 +265,7 @@ public partial class Board
             return new Location(PileKind.Foundation, preferred);
         }
 
-        for (int i = 0; i < NumFoundationPiles; i++)
+        for (int i = 0; i < Position.FoundationCount; i++)
         {
             if (FoundationPiles[i].Count == 0)
             {
@@ -326,19 +278,7 @@ public partial class Board
 
     /// <summary>How many cards are already home. Used to tell a fast-forward that is making
     /// progress from one that is only turning the stock over.</summary>
-    public int FoundationTotal
-    {
-        get
-        {
-            int total = 0;
-            foreach (var pile in FoundationPiles)
-            {
-                total += pile.Count;
-            }
-
-            return total;
-        }
-    }
+    public int FoundationTotal => Position.FoundationTotal;
 
     /// <summary>
     /// Whether the rest of the game is a formality. Once no tableau card is face down there
@@ -360,7 +300,7 @@ public partial class Board
     /// </summary>
     public bool FastForwardStep()
     {
-        for (int i = 0; i < NumTableauPiles; i++)
+        for (int i = 0; i < Position.TableauCount; i++)
         {
             var pile = TableauPiles[i];
             if (pile.Count > 0 && FoundationFor(pile[^1]) is { } home)
@@ -382,8 +322,8 @@ public partial class Board
 
     public bool MakeMove(Move move)
     {
-        var from = Mutable(move.From);
-        var to = Mutable(move.To);
+        var from = Pile(move.From);
+        var to = Pile(move.To);
 
         if (Rules.IsLegal(this, move))
         {
@@ -395,11 +335,8 @@ public partial class Board
 
             PushUndo();
 
-            // move the cards (could be multiple) from from to to.
-            // do not reverse the order of cards, preserve order.
-            var cardsToMove = from.GetRange(from.Count - move.Count, move.Count);
-            from.RemoveRange(from.Count - move.Count, move.Count);
-            to.AddRange(cardsToMove);
+            var cardsToMove = Position.Take(move.From, move.Count);
+            Position.Place(move.To, cardsToMove);
 
             // The stock's deal is the one move that turns its card over on the way. Every
             // other card is showing the same face at both ends of the trip.
@@ -532,14 +469,17 @@ public partial class Board
 
         PushUndo();
 
-        for (int i = faceUp.Count - 1; i >= 0; i--)
+        var waste = new Location(PileKind.FaceUp, 0);
+        var stock = new Location(PileKind.FaceDown, 0);
+
+        for (int i = FaceUpPile.Count - 1; i >= 0; i--)
         {
-            var card = faceUp[i];
+            var card = FaceUpPile[i];
             card.Flip();
-            faceDown.Add(card);
+            Position.Place(stock, card);
         }
 
-        faceUp.Clear();
+        Position.Strip(waste);
         Play(Sound.Recycle);
         MarkDirty(new Location(PileKind.FaceDown, 0));
         MarkDirty(new Location(PileKind.FaceUp, 0));
@@ -570,7 +510,7 @@ public partial class Board
 
         public static Snapshot Of(Board board)
         {
-            var sources = board.EveryPile();
+            var sources = board.Position.EveryPile();
             var piles = new Card[sources.Length][];
             var faceUp = new bool[sources.Length][];
 
@@ -590,7 +530,7 @@ public partial class Board
 
         public void RestoreTo(Board board)
         {
-            var targets = board.EveryPile();
+            var targets = board.Position.EveryPile();
 
             for (int i = 0; i < targets.Length; i++)
             {
@@ -608,15 +548,4 @@ public partial class Board
         }
     }
 
-    /// <summary>Every pile, in one fixed order. Only the snapshot needs the board flattened
-    /// like this, and it needs the same order both times.</summary>
-    private List<Card>[] EveryPile()
-    {
-        var all = new List<Card>[2 + NumFoundationPiles + NumTableauPiles];
-        all[0] = faceDown;
-        all[1] = faceUp;
-        foundations.CopyTo(all, 2);
-        tableaus.CopyTo(all, 2 + NumFoundationPiles);
-        return all;
-    }
 }

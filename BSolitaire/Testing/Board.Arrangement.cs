@@ -32,7 +32,7 @@ public partial class Board
     /// <inheritdoc cref="Place(Location, Card[])"/>
     internal void Place(Location loc, IEnumerable<Card> cards)
     {
-        Mutable(loc).AddRange(cards);
+        Position.Place(loc, cards);
         MarkDirty(loc);
     }
 
@@ -43,21 +43,14 @@ public partial class Board
     /// </summary>
     internal void Strip()
     {
-        foreach (var kind in AllKinds)
-        {
-            for (int i = 0; i < PileCountOf(kind); i++)
-            {
-                Mutable(new Location(kind, i)).Clear();
-            }
-        }
-
+        Position.Strip();
         AllDirty = true;
     }
 
     /// <summary>Takes every card off one pile.</summary>
     internal void Strip(Location loc)
     {
-        Mutable(loc).Clear();
+        Position.Strip(loc);
         MarkDirty(loc);
     }
 
