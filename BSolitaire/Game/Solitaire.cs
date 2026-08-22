@@ -81,6 +81,14 @@ internal sealed class Solitaire : ISolitaireView
     public bool Celebrating => cascade.IsRunning;
 
     /// <summary>
+    /// Whether this is a moment worth asking the player their name. A win is what asks, not a
+    /// deal: the first deal interrupts someone who has not yet decided they care. Whether the
+    /// asking has already happened is the host's business, since it owns the dialog.
+    /// </summary>
+    public bool WantsNickname =>
+        State == GameState.Won && string.IsNullOrWhiteSpace(Score.Nickname);
+
+    /// <summary>
     /// The pile the pointer could pick up from right now, or null if it could not pick up
     /// anything. Not the same as what the pointer is over: while the board is playing itself
     /// out nothing is grabbable, however the pointer is resting. <see cref="Controls"/> keeps
@@ -161,8 +169,16 @@ internal sealed class Solitaire : ISolitaireView
     /// the frame loop is already running and drawing nothing — so proving a deal dead costs
     /// the player nothing they can feel.
     /// </summary>
-    public void Update(TimeSpan elapsed)
+    public void Update(TimeSpan elapsed, PointerAt? pointer = null)
     {
+        // Motion first, so a hover is settled before anything is drawn from it. It arrives
+        // here rather than as its own call because it is frame data: the browser has already
+        // coalesced it to one position for this frame.
+        if (pointer is { } at)
+        {
+            OnPointerMove(at.X, at.Y);
+        }
+
         AdvanceFastForward();
 
         // Anything the board did — this frame or since the last one — goes into the air
@@ -200,7 +216,9 @@ internal sealed class Solitaire : ISolitaireView
             return;
         }
 
-        Do(controls.Down(x, y, touch, CanFastForward, CanUndo));
+        // The cascade has already been ruled out above, so a finished game is a panel on
+        // screen.
+        Do(controls.Down(x, y, touch, CanFastForward, CanUndo, State != GameState.Playing));
     });
 
     public void OnPointerUp(double x, double y) => Guarded(() =>

@@ -347,16 +347,51 @@ public class SessionTests
         Assert.Equal(Rank.Three, board.Position.TableauPiles[0][0].Rank);
     }
 
-    private static Card FaceUp(Suit suit, Rank rank)
+    /// <summary>
+    /// The panel's button used to deal a fresh board itself, which skipped everything
+    /// Solitaire.Reset does around Board.Reset — the animator kept flights aimed at a deal
+    /// that no longer existed. It asks for the same command the R key does now.
+    /// </summary>
+    [Fact]
+    public void TheBannersButtonAsksForANewGameLikeTheKeyDoes()
     {
-        var card = new Card(suit, rank);
-        card.Flip();
-        return card;
+        var game = Sized();
+        game.Board.Position.Strip();
+        game.Board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        game.Board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Queen));
+        game.Board.MakeMove(new Move(Tableau(1), Tableau(0), 1));
+        Assert.NotEqual(GameState.Playing, game.State);
+
+        var (x, y) = Centre(game.Layout.NewGameButton);
+        game.OnPointerDown(x, y);
+
+        Assert.Equal(GameState.Playing, game.State);
+        Assert.Equal(24, game.Board.Position.FaceDownPile.Count);
+        Assert.Empty(game.InFlight);
     }
 
-    private static void ClearBoard(Board board)
+    /// <summary>Motion is frame data, so the frame is allowed to carry it.</summary>
+    [Fact]
+    public void APointerHandedToTheFrameIsTheSameAsOneHandedToTheMove()
     {
-        board.Position.Strip();
+        var game = Sized();
+        var (x, y) = Centre(game.Layout.CardRect(Tableau(1), 0));
+
+        game.Update(TimeSpan.FromMilliseconds(16), new PointerAt(x, y));
+
+        Assert.NotNull(game.GrabbablePile);
+    }
+
+    private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
+
+    /// <summary>A game sized like a real viewport, so the buttons are where the layout puts
+    /// them rather than at the placeholder size.</summary>
+    private static Solitaire Sized()
+    {
+        var game = new Solitaire();
+        game.Resize(1200, 800);
+        game.MarkClean();
+        return game;
     }
 
     /// <summary>Puts the session's own board one move per king from finished.</summary>
@@ -381,15 +416,15 @@ public class SessionTests
         board.MakeMove(new Move(Tableau(0), Foundation(0), 1));
     }
 
-    /// <summary>A game sized like a real viewport, so the buttons are where the layout puts
-    /// them rather than at the placeholder size.</summary>
-    private static Solitaire Sized()
+    private static Card FaceUp(Suit suit, Rank rank)
     {
-        var game = new Solitaire();
-        game.Resize(1200, 800);
-        game.MarkClean();
-        return game;
+        var card = new Card(suit, rank);
+        card.Flip();
+        return card;
     }
 
-    private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
+    private static void ClearBoard(Board board)
+    {
+        board.Position.Strip();
+    }
 }

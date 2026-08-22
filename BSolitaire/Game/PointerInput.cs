@@ -258,14 +258,11 @@ internal sealed class PointerInput
 
     private void Tap(double x, double y)
     {
+        // The panel swallows taps that land on it. Its one button is not handled here:
+        // Controls takes that press, so this only has to keep the felt underneath from
+        // hearing a tap meant for the panel.
         if (OverBanner(x, y))
         {
-            if (layout.NewGameButton.Contains(x, y))
-            {
-                board.Reset();
-                ClearSelection();
-            }
-
             return;
         }
 

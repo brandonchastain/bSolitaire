@@ -58,7 +58,7 @@ internal sealed class Controls
     /// </param>
     /// <param name="undoOffered">Whether there is a move to take back, and so whether the
     /// undo button is on screen at all. Same rule as above.</param>
-    public PlayerCommand Down(double x, double y, bool touch, bool fastForwardOffered, bool undoOffered)
+    public PlayerCommand Down(double x, double y, bool touch, bool fastForwardOffered, bool undoOffered, bool bannerShown)
     {
         // The buttons sit over the felt, so they have to take the press before the piles do.
         // The release that follows has to be swallowed too: PointerInput never saw the press,
@@ -82,6 +82,16 @@ internal sealed class Controls
         {
             pressConsumed = true;
             return PlayerCommand.ToggleMute;
+        }
+
+        // The panel is drawn over everything but the chrome above, so it takes the press
+        // after those and before the felt. Asking for a new game here rather than dealing one
+        // is the point: it goes through the same command as the R key, so a deal started from
+        // the panel puts the animator and the fast-forward away exactly as that one does.
+        if (bannerShown && layout.NewGameButton.Contains(x, y))
+        {
+            pressConsumed = true;
+            return PlayerCommand.NewGame;
         }
 
         pressConsumed = false;
