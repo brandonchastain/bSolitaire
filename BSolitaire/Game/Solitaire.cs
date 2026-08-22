@@ -41,6 +41,13 @@ internal sealed class Solitaire : ISolitaireView
         cascade = new WinCascade(Board, Layout);
     }
 
+    /// <summary>Raised when <see cref="Score"/> has changed and is worth persisting.</summary>
+    public event Action? ScoreChanged
+    {
+        add => scores.Changed += value;
+        remove => scores.Changed -= value;
+    }
+
     public Board Board { get; }
 
     public BoardLayout Layout { get; }
@@ -49,24 +56,11 @@ internal sealed class Solitaire : ISolitaireView
     /// and saves it whenever <see cref="ScoreChanged"/> fires.</summary>
     public PlayerScore Score => scores.Score;
 
-    /// <summary>Raised when <see cref="Score"/> has changed and is worth persisting.</summary>
-    public event Action? ScoreChanged
-    {
-        add => scores.Changed += value;
-        remove => scores.Changed -= value;
-    }
-
     /// <summary>The stack currently held by the pointer, or null.</summary>
     public DragState? Drag => controls.Drag;
 
     /// <summary>Cards part-way between two piles, to be painted over the board.</summary>
     public IReadOnlyList<CardInFlight> InFlight => animator.InFlight;
-
-    /// <summary>
-    /// The index from which a pile must not be drawn, because the cards above it are still
-    /// in the air on their way to it.
-    /// </summary>
-    public int HiddenFrom(Location loc) => animator.HiddenFrom(loc);
 
     /// <summary>Piles that would accept the stack being dragged. Empty unless one is held —
     /// this is the touch answer to a hover, which a finger cannot do.</summary>
@@ -132,8 +126,6 @@ internal sealed class Solitaire : ISolitaireView
     /// </summary>
     public IReadOnlyList<Sound> Sounds => Board.Sounds;
 
-    public void ClearSounds() => Board.ClearSounds();
-
     /// <summary>Whether the board is silent. Toggled with M, and saved with the score.</summary>
     public bool Muted => Score.Muted;
 
@@ -142,6 +134,14 @@ internal sealed class Solitaire : ISolitaireView
 
     /// <summary>Positions the search has examined on the current board.</summary>
     public int AnalysisNodes => analyzer.Nodes;
+
+    /// <summary>
+    /// The index from which a pile must not be drawn, because the cards above it are still
+    /// in the air on their way to it.
+    /// </summary>
+    public int HiddenFrom(Location loc) => animator.HiddenFrom(loc);
+
+    public void ClearSounds() => Board.ClearSounds();
 
     /// <summary>Called by the host once the current picture has been drawn.</summary>
     public void MarkClean()
@@ -189,52 +189,6 @@ internal sealed class Solitaire : ISolitaireView
 
         if (analyzer.Update(paused: Drag != null || fastForward.IsRunning || animator.Busy || cascade.IsRunning))
         {
-            NeedsRedraw = true;
-        }
-    }
-
-    /// <summary>
-    /// Throws the foundations down the board once, on the frame a deal is won, and moves
-    /// them on for as long as they are falling. Keyed to the deal rather than to the state,
-    /// because a won board goes on reporting that it is won for as long as it is on screen.
-    /// </summary>
-    private void Celebrate()
-    {
-        if (State == GameState.Won && celebratedDeal != Board.DealId && !animator.Busy)
-        {
-            celebratedDeal = Board.DealId;
-            cascade.Start();
-        }
-
-        if (cascade.Tick())
-        {
-            NeedsRedraw = true;
-        }
-    }
-
-    /// <summary>
-    /// Lets a running fast-forward take its step. It is outside <see cref="Guarded"/> because
-    /// this runs every frame rather than on an input, and dirtying the picture unconditionally
-    /// would defeat the redraw check on the frames between cards.
-    /// </summary>
-    private void AdvanceFastForward()
-    {
-        if (!fastForward.IsRunning)
-        {
-            return;
-        }
-
-        try
-        {
-            if (fastForward.Tick() != FastForwardTick.Idle)
-            {
-                NeedsRedraw = true;
-            }
-        }
-        catch (Exception ex)
-        {
-            fastForward.Stop();
-            Error = ex.ToString();
             NeedsRedraw = true;
         }
     }
@@ -293,6 +247,64 @@ internal sealed class Solitaire : ISolitaireView
     /// <summary>A key press, using KeyboardEvent.code values ("KeyR", "Space", "ArrowLeft"...).</summary>
     public void OnKeyDown(string code) => Guarded(() => Do(controls.Key(code)));
 
+    /// <summary>Renames the player and reports the change so it gets saved.</summary>
+    public void SetNickname(string nickname) => Guarded(() => scores.SetNickname(nickname));
+
+    /// <summary>Abandons the current game and deals a new one.</summary>
+    public void Reset()
+    {
+        fastForward.Stop();
+        cascade.Stop();
+        animator.Clear();
+        Guarded(Board.Reset);
+    }
+
+    /// <summary>
+    /// Throws the foundations down the board once, on the frame a deal is won, and moves
+    /// them on for as long as they are falling. Keyed to the deal rather than to the state,
+    /// because a won board goes on reporting that it is won for as long as it is on screen.
+    /// </summary>
+    private void Celebrate()
+    {
+        if (State == GameState.Won && celebratedDeal != Board.DealId && !animator.Busy)
+        {
+            celebratedDeal = Board.DealId;
+            cascade.Start();
+        }
+
+        if (cascade.Tick())
+        {
+            NeedsRedraw = true;
+        }
+    }
+
+    /// <summary>
+    /// Lets a running fast-forward take its step. It is outside <see cref="Guarded"/> because
+    /// this runs every frame rather than on an input, and dirtying the picture unconditionally
+    /// would defeat the redraw check on the frames between cards.
+    /// </summary>
+    private void AdvanceFastForward()
+    {
+        if (!fastForward.IsRunning)
+        {
+            return;
+        }
+
+        try
+        {
+            if (fastForward.Tick() != FastForwardTick.Idle)
+            {
+                NeedsRedraw = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            fastForward.Stop();
+            Error = ex.ToString();
+            NeedsRedraw = true;
+        }
+    }
+
     /// <summary>
     /// Carries out one thing the player asked for. Every command arrives here whether it came
     /// from a key or from a button on the felt, so the rule about when each is allowed is
@@ -334,18 +346,6 @@ internal sealed class Solitaire : ISolitaireView
                 Reset();
                 break;
         }
-    }
-
-    /// <summary>Renames the player and reports the change so it gets saved.</summary>
-    public void SetNickname(string nickname) => Guarded(() => scores.SetNickname(nickname));
-
-    /// <summary>Abandons the current game and deals a new one.</summary>
-    public void Reset()
-    {
-        fastForward.Stop();
-        cascade.Stop();
-        animator.Clear();
-        Guarded(Board.Reset);
     }
 
     /// <summary>

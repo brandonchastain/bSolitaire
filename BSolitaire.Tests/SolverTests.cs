@@ -10,19 +10,6 @@ namespace BSolitaire.Tests;
 /// </summary>
 public class SolverTests
 {
-    /// <summary>Runs a search to the end. Generous, because these are not frame-budget tests.</summary>
-    private static SolveResult Solve(Board board)
-    {
-        var solver = new Solver(board);
-
-        while (!solver.Done)
-        {
-            solver.Step(1_000_000, TimeSpan.FromSeconds(10));
-        }
-
-        return solver.Result;
-    }
-
     [Fact]
     public void ABoardOneMoveFromDoneIsWinnable()
     {
@@ -81,5 +68,18 @@ public class SolverTests
         {
             Assert.True(Rules.CanFound(Up(suit, Rank.King), Up(suit, Rank.Queen)));
         }
+    }
+
+    /// <summary>Runs a search to the end. Generous, because these are not frame-budget tests.</summary>
+    private static SolveResult Solve(Board board)
+    {
+        var solver = new Solver(board);
+
+        while (!solver.Done)
+        {
+            solver.Step(1_000_000, TimeSpan.FromSeconds(10));
+        }
+
+        return solver.Result;
     }
 }

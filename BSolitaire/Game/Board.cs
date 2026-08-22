@@ -1,148 +1,35 @@
 namespace BSolitaire.Game;
 
 /// <summary>
-/// Holds the cards, piles, and state of the Solitaire game.
+/// A game in progress: where the cards are, how they got there, and what has changed since
+/// anyone last looked. <see cref="Position"/> holds the cards; this holds everything that has
+/// to happen when they move.
 /// </summary>
-public partial class Board
+public class Board
 {
-    /// <inheritdoc cref="Position.AllKinds"/>
     public static readonly PileKind[] AllKinds = Position.AllKinds;
-    private static readonly Dealer Dealer = new();
 
     /// <summary>Ace through king: a full foundation.</summary>
     private const int FoundationSize = 13;
 
-
-    public Board() => Reset();
-
     /// <summary>
-    /// Where the cards are. The board is this, plus everything that has to happen when they
-    /// move: the undo history, the change log, and the rules that decide whether they may.
-    /// </summary>
-    public Position Position { get; } = new();
-
-    /// <inheritdoc cref="Position.FaceDownPile"/>
-    public IReadOnlyList<Card> FaceDownPile => Position.FaceDownPile;
-
-    /// <inheritdoc cref="Position.FaceUpPile"/>
-    public IReadOnlyList<Card> FaceUpPile => Position.FaceUpPile;
-
-    /// <summary>The four foundations. No pile is reserved for a suit — whichever ace lands on a
-    /// pile first claims it for the rest of the game.</summary>
-    public IReadOnlyList<IReadOnlyList<Card>> FoundationPiles => Position.FoundationPiles;
-
-    /// <summary>The seven tableau piles, left to right.</summary>
-    public IReadOnlyList<IReadOnlyList<Card>> TableauPiles => Position.TableauPiles;
-
-    /// <summary>
-    /// Whether the game is still going, and if not, how it ended. Recomputed after every
-    /// move rather than on demand: the answer only changes when the board does, and both the
-    /// drawer and the input path ask for it.
-    /// </summary>
-    public GameState State { get; private set; }
-
-    /// <summary>
-    /// Bumped every time the position changes. Lets anything doing slow work about a position
-    /// — the solver — notice that the board moved out from under it.
-    /// </summary>
-    public int Version { get; private set; }
-
-    private readonly HashSet<Location> dirty = new();
-
-    /// <summary>
-    /// The piles whose contents have changed since the last <see cref="ClearDirty"/>. A move
-    /// touches two of them out of thirteen, and repainting a pile costs far more than working
-    /// out which ones to repaint — so the board says what it changed rather than leaving the
-    /// drawer to diff the whole position or give up and redraw everything.
-    /// </summary>
-    public IReadOnlyCollection<Location> DirtyPiles => dirty;
-
-    /// <summary>True when the whole position changed at once and naming piles is pointless.</summary>
-    public bool AllDirty { get; private set; } = true;
-
-    public void ClearDirty()
-    {
-        dirty.Clear();
-        AllDirty = false;
-    }
-
-    private readonly List<Sound> sounds = new();
-
-    /// <summary>
-    /// Noises the position has asked for since the last <see cref="ClearSounds"/>. The board
-    /// names them and forgets them; playing one is the host's business.
-    /// </summary>
-    public IReadOnlyList<Sound> Sounds => sounds;
-
-    public void ClearSounds() => sounds.Clear();
-
-    /// <summary>
-    /// A ceiling on how many can pile up before anyone listens. Nothing a player can do
-    /// reaches it, but the queue is only drained by a running frame loop — if drawing stops,
-    /// this stops the list growing for the rest of the session.
+    /// A ceiling on how many notices can pile up before anyone listens. Nothing a player can do
+    /// reaches it, but these queues are only drained by a running frame loop — if drawing stops,
+    /// this stops them growing for the rest of the session.
     /// </summary>
     private const int MaxQueuedSounds = 32;
 
-    private void Play(Sound sound)
-    {
-        if (sounds.Count < MaxQueuedSounds)
-        {
-            sounds.Add(sound);
-        }
-    }
-
-    private void MarkDirty(Location loc) => dirty.Add(loc);
-
-    /// <summary>
-    /// Says a pile needs repainting although its contents did not change. The animator is
-    /// what needs this: a card in flight is held out of the pile it landed on, so the pile
-    /// has to be redrawn once more when the flight ends and the card belongs there again.
-    /// </summary>
-    public void Touch(Location loc) => MarkDirty(loc);
-
-    private readonly List<Motion> motions = new();
-
-    /// <summary>
-    /// Cards that have moved or turned over since the last <see cref="ClearMotions"/>. Named
-    /// in the same spirit as <see cref="Sounds"/> — the position reports what happened and
-    /// nothing more; <see cref="Animator"/> is what turns that into something on screen.
-    /// </summary>
-    public IReadOnlyList<Motion> Motions => motions;
-
-    public void ClearMotions() => motions.Clear();
-
-    /// <summary>The same ceiling as the sound queue, and for the same reason: nothing drains
-    /// this unless a frame loop is running.</summary>
     private const int MaxQueuedMotions = 64;
 
-    private void Moved(Motion motion)
-    {
-        if (motions.Count < MaxQueuedMotions)
-        {
-            motions.Add(motion);
-        }
-    }
+    /// <summary>How far back a player can go. Long enough to cover any mistake worth taking
+    /// back, short enough that a very long game cannot grow the list without bound.</summary>
+    private const int MaxUndo = 200;
 
-    /// <summary>
-    /// Records that a search proved this position cannot be won. Only the search can know
-    /// this, so it is told to the board rather than worked out by it. Ignored once a game has
-    /// ended, and undone by the next move.
-    /// </summary>
-    public void MarkUnwinnable()
-    {
-        if (State == GameState.Playing)
-        {
-            State = GameState.Unwinnable;
-        }
-    }
+    private static readonly Dealer Dealer = new();
 
-    /// <summary>
-    /// Which deal this is. Bumped only by <see cref="Reset"/>, unlike <see cref="Version"/>,
-    /// which counts positions. Anything that must happen once per game rather than once per
-    /// position — counting a deal in the record — keys off this, so taking a move back does
-    /// not present the same deal as a fresh one.
-    /// </summary>
-    public int DealId { get; private set; }
+    private readonly HashSet<Location> dirty = new();
+    private readonly List<Sound> sounds = new();
+    private readonly List<Motion> motions = new();
 
     /// <summary>
     /// Positions to go back to, most recent last. A snapshot rather than an inverse move:
@@ -151,28 +38,107 @@ public partial class Board
     /// </summary>
     private readonly List<Snapshot> history = new();
 
-    /// <summary>How far back a player can go. Long enough to cover any mistake worth taking
-    /// back, short enough that a very long game cannot grow the list without bound.</summary>
-    private const int MaxUndo = 200;
+    public Board() => Reset();
+
+    public Position Position { get; } = new();
+
+    public IReadOnlyList<Card> FaceDownPile => Position.FaceDownPile;
+
+    public IReadOnlyList<Card> FaceUpPile => Position.FaceUpPile;
+
+    public IReadOnlyList<IReadOnlyList<Card>> FoundationPiles => Position.FoundationPiles;
+
+    public IReadOnlyList<IReadOnlyList<Card>> TableauPiles => Position.TableauPiles;
+
+    public int FoundationTotal => Position.FoundationTotal;
+
+    /// <summary>Recomputed after every move rather than on demand: the answer only changes when
+    /// the board does, and both the drawer and the input path ask for it.</summary>
+    public GameState State { get; private set; }
+
+    /// <summary>Bumped every time the position changes, so anything doing slow work about a
+    /// position — the solver — notices that the board moved out from under it.</summary>
+    public int Version { get; private set; }
 
     /// <summary>
-    /// Whether there is a move to take back. A won deal is finished and stays finished —
-    /// it has been counted in the record, and the cards are busy falling off the screen.
+    /// Bumped only by <see cref="Reset"/>, unlike <see cref="Version"/>, which counts positions.
+    /// Anything that must happen once per game rather than once per position — counting a deal
+    /// in the record — keys off this, so taking a move back does not present a fresh deal.
     /// </summary>
+    public int DealId { get; private set; }
+
+    /// <summary>
+    /// The piles that changed since the last <see cref="ClearDirty"/>. A move touches two of
+    /// thirteen, and repainting a pile costs far more than working out which ones to repaint.
+    /// </summary>
+    public IReadOnlyCollection<Location> DirtyPiles => dirty;
+
+    /// <summary>True when the whole position changed at once and naming piles is pointless.</summary>
+    public bool AllDirty { get; private set; } = true;
+
+    /// <summary>Noises asked for since the last <see cref="ClearSounds"/>. The board names them
+    /// and forgets them; playing one is the host's business.</summary>
+    public IReadOnlyList<Sound> Sounds => sounds;
+
+    /// <summary>Cards that moved or turned over since the last <see cref="ClearMotions"/>.</summary>
+    public IReadOnlyList<Motion> Motions => motions;
+
+    /// <summary>A won deal is finished and stays finished — it has been counted in the record,
+    /// and the cards are busy falling off the screen.</summary>
     public bool CanUndo => history.Count > 0 && State != GameState.Won;
 
-    private void PushUndo()
-    {
-        if (history.Count == MaxUndo)
-        {
-            history.RemoveAt(0);
-        }
+    /// <summary>
+    /// Whether the rest of the game is a formality. Once no tableau card is face down there
+    /// is nothing left to discover: every remaining card is either on a tableau top or in the
+    /// stock, which recycles without limit, so all of them can be reached.
+    ///
+    /// Greedily sending home whatever can go home always finishes from here. Take the lowest
+    /// rank not yet on a foundation: every card below it is already home, tableau piles run
+    /// downwards to their top card, so nothing is covering it, and its foundation is waiting
+    /// at exactly one less. So a card is always playable until none are left.
+    /// </summary>
+    public bool CanFastForward { get; private set; }
 
-        history.Add(Snapshot.Of(this));
+    /// <summary>
+    /// Recomputes what the board derives from the position — won and stuck, the offer to play
+    /// out, and the version the solver watches. Needed because <see cref="Position"/> can be
+    /// arranged directly, and a board cannot notice cards it did not move.
+    /// </summary>
+    public void Settle() => RefreshState();
+
+    public IReadOnlyList<Card> Pile(Location loc) => Position.Pile(loc);
+
+    public int PileCountOf(PileKind kind) => Position.PileCountOf(kind);
+
+    public void ClearDirty()
+    {
+        dirty.Clear();
+        AllDirty = false;
     }
 
-    /// <summary>Puts the board back the way it was before the last move. Returns false when
-    /// there is nothing to go back to.</summary>
+    public void ClearSounds() => sounds.Clear();
+
+    public void ClearMotions() => motions.Clear();
+
+    /// <summary>
+    /// Says a pile needs repainting although its contents did not change. The animator needs
+    /// this: a card in flight is held out of the pile it landed on, so the pile has to be
+    /// redrawn once more when the flight ends and the card belongs there again.
+    /// </summary>
+    public void Touch(Location loc) => MarkDirty(loc);
+
+    /// <summary>Records that a search proved this position cannot be won. Only the search can
+    /// know this, so it is told to the board rather than worked out by it.</summary>
+    public void MarkUnwinnable()
+    {
+        if (State == GameState.Playing)
+        {
+            State = GameState.Unwinnable;
+        }
+    }
+
+    /// <summary>Puts the board back the way it was before the last move. False when there is
+    /// nothing to go back to.</summary>
     public bool Undo()
     {
         if (!CanUndo)
@@ -205,43 +171,10 @@ public partial class Board
     }
 
     /// <summary>
-    /// Reports the deal as twenty-eight cards leaving the stock, in the order they were
-    /// dealt: a row at a time, left to right. The dealer has already put them where they go,
-    /// so this is only the account of it — but the order is what lets the deal be watched
-    /// rather than just appear, so it is worth being exact about.
-    /// </summary>
-    private void AnnounceDeal()
-    {
-        var stock = new Location(PileKind.FaceDown, 0);
-
-        for (int row = 0; row < Position.TableauCount; row++)
-        {
-            for (int pileIndex = row; pileIndex < Position.TableauCount; pileIndex++)
-            {
-                var card = TableauPiles[pileIndex][row];
-                Moved(new Motion(
-                    MotionKind.Move,
-                    card,
-                    stock,
-                    0,
-                    new Location(PileKind.Tableau, pileIndex),
-                    row,
-                    Reveals: card.IsFaceUp));
-            }
-        }
-    }
-
-    /// <inheritdoc cref="Position.Pile"/>
-    public IReadOnlyList<Card> Pile(Location loc) => Position.Pile(loc);
-
-    /// <inheritdoc cref="Position.PileCountOf"/>
-    public int PileCountOf(PileKind kind) => Position.PileCountOf(kind);
-
-    /// <summary>
-    /// The foundation <paramref name="card"/> belongs on, or null if it has no home yet.
-    /// A card that continues a started pile goes there; an ace prefers the pile matching its
-    /// suit — the soft default the comment used to claim — and settles for any empty one, so
-    /// the first four aces still end up on four separate piles whatever order they arrive in.
+    /// The foundation <paramref name="card"/> belongs on, or null if it has no home yet. A card
+    /// that continues a started pile goes there; an ace prefers the pile matching its suit and
+    /// settles for any empty one, so the first four aces still end up on four separate piles
+    /// whatever order they arrive in.
     /// </summary>
     public Location? FoundationFor(Card card)
     {
@@ -276,27 +209,10 @@ public partial class Board
         return null;
     }
 
-    /// <summary>How many cards are already home. Used to tell a fast-forward that is making
-    /// progress from one that is only turning the stock over.</summary>
-    public int FoundationTotal => Position.FoundationTotal;
-
     /// <summary>
-    /// Whether the rest of the game is a formality. Once no tableau card is face down there
-    /// is nothing left to discover: every remaining card is either on a tableau top or in the
-    /// stock, which recycles without limit, so all of them can be reached. Playing it out is
-    /// then just clicking, and the game offers to do it instead.
-    ///
-    /// Greedily sending home whatever can go home always finishes from here. Take the lowest
-    /// rank not yet on a foundation: every card below it is already home, tableau piles run
-    /// downwards to their top card, so nothing is covering it, and its foundation is waiting
-    /// at exactly one less. So a card is always playable until none are left.
-    /// </summary>
-    public bool CanFastForward { get; private set; }
-
-    /// <summary>
-    /// Sends one more card home, or turns the stock over to reach one. Returns false when
-    /// there is nothing left to do. One card per call rather than the whole finish at once,
-    /// so the caller can spread it over frames and the player gets to watch it happen.
+    /// Sends one more card home, or turns the stock over to reach one. One card per call rather
+    /// than the whole finish at once, so the caller can spread it over frames and the player
+    /// gets to watch it happen.
     /// </summary>
     public bool FastForwardStep()
     {
@@ -403,10 +319,108 @@ public partial class Board
         return true;
     }
 
+    public bool DealFromStock()
+    {
+        if (FaceDownPile.Count == 0)
+        {
+            return false;
+        }
+
+        return MakeMove(new Move(
+            new Location(PileKind.FaceDown, 0),
+            new Location(PileKind.FaceUp, 0),
+            1));
+    }
+
     /// <summary>
-    /// Works out whether the game is over. Only called after a move, since nothing else can
-    /// end a game — the board is otherwise idle between pointer events.
+    /// Turns the whole waste back over to form a fresh stock, so the cards come off again in
+    /// the order they went on. Not expressed as a Move: it touches every card at once and
+    /// there is no legality question for Rules to answer.
     /// </summary>
+    public bool RecycleWaste()
+    {
+        if (FaceDownPile.Count > 0 || FaceUpPile.Count == 0)
+        {
+            return false;
+        }
+
+        PushUndo();
+
+        var waste = new Location(PileKind.FaceUp, 0);
+        var stock = new Location(PileKind.FaceDown, 0);
+
+        for (int i = FaceUpPile.Count - 1; i >= 0; i--)
+        {
+            var card = FaceUpPile[i];
+            card.Flip();
+            Position.Place(stock, card);
+        }
+
+        Position.Strip(waste);
+        Play(Sound.Recycle);
+        MarkDirty(stock);
+        MarkDirty(waste);
+        RefreshState();
+        return true;
+    }
+
+    private void Play(Sound sound)
+    {
+        if (sounds.Count < MaxQueuedSounds)
+        {
+            sounds.Add(sound);
+        }
+    }
+
+    private void Moved(Motion motion)
+    {
+        if (motions.Count < MaxQueuedMotions)
+        {
+            motions.Add(motion);
+        }
+    }
+
+    private void MarkDirty(Location loc) => dirty.Add(loc);
+
+    private void PushUndo()
+    {
+        if (history.Count == MaxUndo)
+        {
+            history.RemoveAt(0);
+        }
+
+        history.Add(Snapshot.Of(this));
+    }
+
+    /// <summary>
+    /// Reports the deal as twenty-eight cards leaving the stock, in the order they were dealt:
+    /// a row at a time, left to right. The dealer has already put them where they go, so this
+    /// is only the account of it — but the order is what lets the deal be watched rather than
+    /// just appear.
+    /// </summary>
+    private void AnnounceDeal()
+    {
+        var stock = new Location(PileKind.FaceDown, 0);
+
+        for (int row = 0; row < Position.TableauCount; row++)
+        {
+            for (int pileIndex = row; pileIndex < Position.TableauCount; pileIndex++)
+            {
+                var card = TableauPiles[pileIndex][row];
+                Moved(new Motion(
+                    MotionKind.Move,
+                    card,
+                    stock,
+                    0,
+                    new Location(PileKind.Tableau, pileIndex),
+                    row,
+                    Reveals: card.IsFaceUp));
+            }
+        }
+    }
+
+    /// <summary>Only called after a move, since nothing else can end a game — the board is
+    /// otherwise idle between pointer events.</summary>
     private void RefreshState()
     {
         Version++;
@@ -441,57 +455,11 @@ public partial class Board
         return true;
     }
 
-    /// <summary>Turns the top stock card face up onto the waste.</summary>
-    public bool DealFromStock()
-    {
-        if (FaceDownPile.Count == 0)
-        {
-            return false;
-        }
-
-        return MakeMove(new Move(
-            new Location(PileKind.FaceDown, 0),
-            new Location(PileKind.FaceUp, 0),
-            1));
-    }
-
     /// <summary>
-    /// Turns the whole waste back over to form a fresh stock, so the cards come off again
-    /// in the order they went on. Not expressed as a Move: it touches every card at once
-    /// and there is no legality question for Rules to answer.
-    /// </summary>
-    public bool RecycleWaste()
-    {
-        if (FaceDownPile.Count > 0 || FaceUpPile.Count == 0)
-        {
-            return false;
-        }
-
-        PushUndo();
-
-        var waste = new Location(PileKind.FaceUp, 0);
-        var stock = new Location(PileKind.FaceDown, 0);
-
-        for (int i = FaceUpPile.Count - 1; i >= 0; i--)
-        {
-            var card = FaceUpPile[i];
-            card.Flip();
-            Position.Place(stock, card);
-        }
-
-        Position.Strip(waste);
-        Play(Sound.Recycle);
-        MarkDirty(new Location(PileKind.FaceDown, 0));
-        MarkDirty(new Location(PileKind.FaceUp, 0));
-        RefreshState();
-        return true;
-    }
-
-    /// <summary>
-    /// A whole position, kept so it can be handed back. Cards are held by reference — they
-    /// are the same fifty-two objects for the life of a deal — but which way up each one is
-    /// lies on the card itself and is copied, because that is exactly what a move changes
-    /// behind the player's back.
+    /// A whole position, kept so it can be handed back. Cards are held by reference — they are
+    /// the same fifty-two objects for the life of a deal — but which way up each one is lies on
+    /// the card itself and is copied, because that is exactly what a move changes behind the
+    /// player's back.
     /// </summary>
     private sealed class Snapshot
     {
@@ -547,5 +515,4 @@ public partial class Board
             board.CanFastForward = canFastForward;
         }
     }
-
 }

@@ -340,15 +340,6 @@ public class LayoutTests
         }
     }
 
-    private static IEnumerable<(double X, double Y)> Corners(Rect rect)
-    {
-        yield return (rect.X + 0.5, rect.Y + 0.5);
-        yield return (rect.X + rect.W - 0.5, rect.Y + 0.5);
-        yield return (rect.X + 0.5, rect.Y + rect.H - 0.5);
-        yield return (rect.X + rect.W - 0.5, rect.Y + rect.H - 0.5);
-        yield return (rect.X + rect.W / 2, rect.Y + rect.H / 2);
-    }
-
     [Fact]
     public void APressOnBareFeltHitsNothing()
     {
@@ -356,5 +347,14 @@ public class LayoutTests
         var layout = new BoardLayout(1200, 800);
 
         Assert.False(layout.TryHitTest(board, 1199, 1, out _, out _));
+    }
+
+    private static IEnumerable<(double X, double Y)> Corners(Rect rect)
+    {
+        yield return (rect.X + 0.5, rect.Y + 0.5);
+        yield return (rect.X + rect.W - 0.5, rect.Y + 0.5);
+        yield return (rect.X + 0.5, rect.Y + rect.H - 0.5);
+        yield return (rect.X + rect.W - 0.5, rect.Y + rect.H - 0.5);
+        yield return (rect.X + rect.W / 2, rect.Y + rect.H / 2);
     }
 }

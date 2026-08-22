@@ -11,16 +11,6 @@ namespace BSolitaire.Tests;
 /// </summary>
 public class SessionTests
 {
-    /// <summary>A game sized like a real viewport, so the buttons are where the layout puts
-    /// them rather than at the placeholder size.</summary>
-    private static Solitaire Sized()
-    {
-        var game = new Solitaire();
-        game.Resize(1200, 800);
-        game.MarkClean();
-        return game;
-    }
-
     private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
 
     [Fact]
@@ -253,8 +243,8 @@ public class SessionTests
         var game = Sized();
         var board = game.Board;
         ClearBoard(board);
-        board.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
-        board.Place(Tableau(1), Up(Suit.Spades, Rank.Queen));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Queen));
         board.MakeMove(new Move(Tableau(1), Tableau(0), 1));
 
         game.Update(TimeSpan.FromMilliseconds(16));
@@ -340,9 +330,9 @@ public class SessionTests
         var board = game.Board;
         ClearBoard(board);
 
-        board.Place(Foundation(0), FaceUp(Suit.Hearts, Rank.Ace));
-        board.Place(Tableau(0), FaceUp(Suit.Hearts, Rank.Three));
-        board.Place(Tableau(0), FaceUp(Suit.Hearts, Rank.Two));
+        board.Position.Place(Foundation(0), FaceUp(Suit.Hearts, Rank.Ace));
+        board.Position.Place(Tableau(0), FaceUp(Suit.Hearts, Rank.Three));
+        board.Position.Place(Tableau(0), FaceUp(Suit.Hearts, Rank.Two));
 
         var card = game.Layout.CardRect(new Location(PileKind.Tableau, 0), 1);
         double x = card.X + card.W / 2;
@@ -368,7 +358,7 @@ public class SessionTests
 
     private static void ClearBoard(Board board)
     {
-        board.Strip();
+        board.Position.Strip();
     }
 
     /// <summary>Puts the session's own board one move per king from finished.</summary>
@@ -383,13 +373,23 @@ public class SessionTests
 
             for (int rank = (int)Rank.Ace; rank <= (int)Rank.Queen; rank++)
             {
-                board.Place(Foundation(i), Up(suit, (Rank)rank));
+                board.Position.Place(Foundation(i), Up(suit, (Rank)rank));
             }
 
-            board.Place(Tableau(i), Up(suit, Rank.King));
+            board.Position.Place(Tableau(i), Up(suit, Rank.King));
         }
 
         // One real move, so the board works out that it is now finishable.
         board.MakeMove(new Move(Tableau(0), Foundation(0), 1));
+    }
+
+    /// <summary>A game sized like a real viewport, so the buttons are where the layout puts
+    /// them rather than at the placeholder size.</summary>
+    private static Solitaire Sized()
+    {
+        var game = new Solitaire();
+        game.Resize(1200, 800);
+        game.MarkClean();
+        return game;
     }
 }

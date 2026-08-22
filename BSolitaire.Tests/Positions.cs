@@ -24,7 +24,7 @@ public static class Positions
     public static Board Empty()
     {
         var board = new Board();
-        board.Strip();
+        board.Position.Strip();
         return board;
     }
 
@@ -43,10 +43,10 @@ public static class Positions
 
             for (int rank = (int)Rank.Ace; rank <= (int)Rank.Queen; rank++)
             {
-                board.Place(Foundation(i), Up(suit, (Rank)rank));
+                board.Position.Place(Foundation(i), Up(suit, (Rank)rank));
             }
 
-            board.Place(Tableau(i), Up(suit, Rank.King));
+            board.Position.Place(Tableau(i), Up(suit, Rank.King));
         }
 
         return board;

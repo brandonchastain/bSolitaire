@@ -27,8 +27,8 @@ public class AnimationTests
     public void AMoveIsReportedAsACardTravelling()
     {
         var (board, _, animator) = Table();
-        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
-        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         board.MakeMove(new Move(Tableau(0), Tableau(1), 1));
         animator.Capture(0);
@@ -43,8 +43,8 @@ public class AnimationTests
     {
         // Otherwise it is drawn twice: once where it now belongs, and once in mid-air.
         var (board, _, animator) = Table();
-        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
-        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         board.MakeMove(new Move(Tableau(0), Tableau(1), 1));
         animator.Capture(0);
@@ -58,8 +58,8 @@ public class AnimationTests
     public void ACardThatHasArrivedIsGivenBackToItsPile()
     {
         var (board, _, animator) = Table();
-        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
-        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         board.MakeMove(new Move(Tableau(0), Tableau(1), 1));
         animator.Capture(0);
@@ -80,8 +80,8 @@ public class AnimationTests
     public void ACardTravelsFromWhereItWasToWhereItIsGoing()
     {
         var (board, layout, animator) = Table();
-        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
-        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         var start = layout.CardRect(Tableau(0), 0);
         var end = layout.CardRect(Tableau(1), 1);
@@ -101,7 +101,7 @@ public class AnimationTests
     public void ACardOffTheStockTurnsOverOnTheWay()
     {
         var (board, _, animator) = Table();
-        board.Place(Stock, Down(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Stock, Down(Suit.Hearts, Rank.Nine));
 
         board.DealFromStock();
         animator.Capture(0);
@@ -120,9 +120,9 @@ public class AnimationTests
     public void AnUncoveredCardTurnsOverWhereItLies()
     {
         var (board, layout, animator) = Table();
-        board.Place(Tableau(0), Down(Suit.Clubs, Rank.Four));
-        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
-        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Down(Suit.Clubs, Rank.Four));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         board.MakeMove(new Move(Tableau(0), Tableau(1), 1));
         animator.Capture(0);
@@ -180,8 +180,8 @@ public class AnimationTests
         // Animating that literally means a stack the player has just dragged across the
         // board snaps back to where it started and flies out again.
         var (board, layout, animator) = Table();
-        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
-        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         // Let go of it a long way from either column.
         var releasedAt = new Rect(600, 700, layout.CardWidth, layout.CardHeight);
@@ -201,8 +201,8 @@ public class AnimationTests
         // An illegal drop makes no move at all. The next real move must not be animated from
         // a pointer that has long since moved on.
         var (board, layout, animator) = Table();
-        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
-        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
 
         animator.ReleaseAt(Tableau(0), 0, new Rect(600, 700, layout.CardWidth, layout.CardHeight));
         animator.Capture(0); // nothing was moved, so nothing is captured
@@ -229,8 +229,8 @@ public class AnimationTests
     private static double TimeToMove(Location destination)
     {
         var (board, _, animator) = Table();
-        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
-        board.Place(destination, Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(destination, Up(Suit.Spades, Rank.Ten));
 
         Assert.True(board.MakeMove(new Move(Tableau(0), destination, 1)));
         animator.Capture(0);
@@ -258,8 +258,8 @@ public class AnimationTests
     public void ClearingLandsEverythingImmediately()
     {
         var (board, _, animator) = Table();
-        board.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
-        board.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Ten));
         board.MakeMove(new Move(Tableau(0), Tableau(1), 1));
         animator.Capture(0);
 
@@ -331,7 +331,7 @@ public class AnimationTests
         game.Resize(Width, Height);
 
         var board = game.Board;
-        board.Strip();
+        board.Position.Strip();
         board.ClearMotions();
 
         for (int i = 0; i < 4; i++)
@@ -339,10 +339,10 @@ public class AnimationTests
             var suit = (Suit)i;
             for (int rank = (int)Rank.Ace; rank <= (int)Rank.Queen; rank++)
             {
-                board.Place(Foundation(i), Up(suit, (Rank)rank));
+                board.Position.Place(Foundation(i), Up(suit, (Rank)rank));
             }
 
-            board.Place(Tableau(i), Up(suit, Rank.King));
+            board.Position.Place(Tableau(i), Up(suit, Rank.King));
         }
 
         for (int i = 0; i < 4; i++)
