@@ -271,8 +271,7 @@ internal sealed class CanvasDrawer : IGameDrawer
 
     /// <summary>What the atlas canvas needs to be, in CSS pixels, for this card size.</summary>
     public (double Width, double Height) AtlasSize(BoardLayout layout) =>
-        ((layout.CardWidth + 2 * AtlasPad) * AtlasColumns,
-         (layout.CardHeight + 2 * AtlasPad) * AtlasRows);
+        (CellPitch(layout.CardWidth) * AtlasColumns, CellPitch(layout.CardHeight) * AtlasRows);
 
     /// <summary>
     /// The atlas canvas has been resized, so everything in it was drawn for a card that no
@@ -539,6 +538,13 @@ internal sealed class CanvasDrawer : IGameDrawer
     /// Starts a batch on whichever context is current and forgets everything cached about
     /// its state. The style cache describes one context, and there are two of them.
     /// </summary>
+    /// <summary>The nearest whole device pixel to a CSS coordinate.</summary>
+    private double Snap(double value) => Math.Round(value * pixelRatio) / pixelRatio;
+
+    /// <summary>One atlas cell across, in CSS pixels, rounded so that it is also a whole
+    /// number of the atlas canvas's own pixels.</summary>
+    private double CellPitch(double side) => Math.Round((side + 2 * AtlasPad) * pixelRatio) / pixelRatio;
+
     private async ValueTask BeginPass(BoardLayout layout)
     {
         fillStyle = null;
@@ -549,9 +555,12 @@ internal sealed class CanvasDrawer : IGameDrawer
         compact = layout.SmallCards;
 
         // One cell of the atlas, in that canvas's own backing pixels — which is what a
-        // source rectangle is measured in, unlike everything else the drawer says.
-        cellWidth = (layout.CardWidth + 2 * AtlasPad) * pixelRatio;
-        cellHeight = (layout.CardHeight + 2 * AtlasPad) * pixelRatio;
+        // source rectangle is measured in, unlike everything else the drawer says. Rounded,
+        // so that every cell after the first still starts on a pixel: a card width is
+        // whatever the viewport divides to, and a source rectangle that starts half a pixel
+        // in samples a sliver of the card next door.
+        cellWidth = Math.Round((layout.CardWidth + 2 * AtlasPad) * pixelRatio);
+        cellHeight = Math.Round((layout.CardHeight + 2 * AtlasPad) * pixelRatio);
         cardWidth = layout.CardWidth;
         cardHeight = layout.CardHeight;
         double rankText = layout.CardHeight * (compact ? CompactRankText : RankText);
@@ -860,16 +869,30 @@ internal sealed class CanvasDrawer : IGameDrawer
             double across = rect.W / cardWidth;
             double down = rect.H / cardHeight;
 
+            // Snapped to whole device pixels. A card is a whole number of pixels wide, but
+            // nothing says where it sits: the board is centred and its margins and gutters
+            // are fractions of a card, so on a 1280-wide window the columns land at 206.8,
+            // 332.2, 457.6 and so on. A drawImage that lands between pixels is resampled
+            // rather than copied, and that blend is a light smear across the whole face —
+            // the index and the pips along with the edge.
+            //
+            // Both edges are snapped rather than the corner and the size, so two cards side
+            // by side cannot end up a pixel apart from what the layout asked for.
+            double left = Snap(rect.X - AtlasPad * across);
+            double top = Snap(rect.Y - AtlasPad * down);
+            double right = Snap(rect.X + rect.W + AtlasPad * across);
+            double bottom = Snap(rect.Y + rect.H + AtlasPad * down);
+
             await ctx.DrawImageAsync(
                 atlasElement,
                 slot % AtlasColumns * cellWidth,
                 slot / AtlasColumns * cellHeight,
                 cellWidth,
                 cellHeight,
-                rect.X - AtlasPad * across,
-                rect.Y - AtlasPad * down,
-                rect.W + 2 * AtlasPad * across,
-                rect.H + 2 * AtlasPad * down);
+                left,
+                top,
+                right - left,
+                bottom - top);
 
             return;
         }
@@ -1005,8 +1028,8 @@ internal sealed class CanvasDrawer : IGameDrawer
     /// rectangle, so its corners are transparent and whatever was there would show.</summary>
     private async ValueTask RenderSlot(int slot, BoardLayout layout)
     {
-        double width = layout.CardWidth + 2 * AtlasPad;
-        double height = layout.CardHeight + 2 * AtlasPad;
+        double width = CellPitch(layout.CardWidth);
+        double height = CellPitch(layout.CardHeight);
 
         var cell = new Rect(
             slot % AtlasColumns * width,
