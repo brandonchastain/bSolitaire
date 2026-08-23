@@ -1,4 +1,4 @@
-using BSolitaire.Game;
+﻿using BSolitaire.Game;
 using Xunit;
 using static BSolitaire.Tests.Positions;
 
@@ -285,6 +285,47 @@ public class AnimationTests
 
         Assert.False(cascade.IsRunning);
         Assert.Empty(cascade.Falling);
+    }
+
+    [Fact]
+    public void ThePanelDoesNotShowWhileTheWinningCardIsStillInTheAir()
+    {
+        var game = new Solitaire();
+        game.Resize(Width, Height);
+
+        var board = game.Board;
+        board.Position.Strip();
+        board.ClearMotions();
+
+        for (int i = 0; i < 4; i++)
+        {
+            var suit = (Suit)i;
+            for (int rank = (int)Rank.Ace; rank <= (int)Rank.Queen; rank++)
+            {
+                board.Position.Place(Foundation(i), Up(suit, (Rank)rank));
+            }
+
+            board.Position.Place(Tableau(i), Up(suit, Rank.King));
+        }
+
+        for (int i = 0; i < 4; i++)
+        {
+            board.MakeMove(new Move(Tableau(i), Foundation(i), 1));
+        }
+
+        // The board is won the moment the last king is moved, but the kings are still
+        // flying, so the cascade has not been thrown yet. Every frame of that gap used to
+        // paint the panel, which is the flash: on, off for the cascade, then on again.
+        game.Update(TimeSpan.FromMilliseconds(0));
+        Assert.Equal(GameState.Won, game.State);
+        Assert.Empty(game.Falling);
+        Assert.True(game.Celebrating);
+
+        for (int frame = 1; frame < 40; frame++)
+        {
+            game.Update(TimeSpan.FromMilliseconds(frame * 16));
+            Assert.True(game.Celebrating);
+        }
     }
 
     [Fact]

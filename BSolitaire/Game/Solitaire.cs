@@ -1,4 +1,4 @@
-namespace BSolitaire.Game;
+﻿namespace BSolitaire.Game;
 
 /// <summary>
 /// One game session: the pieces, and the frame they share. The rules live in
@@ -77,8 +77,15 @@ internal sealed class Solitaire : ISolitaireView
     /// </summary>
     public bool CanUndo => Board.CanUndo && !fastForward.IsRunning;
 
-    /// <summary>Whether the cards are still coming down after a win.</summary>
-    public bool Celebrating => cascade.IsRunning;
+    /// <summary>
+    /// Whether the celebration still has the board. True from the moment the last card lands
+    /// until the last one has finished falling — including the beat in between, while the
+    /// winning move is still in the air and the cascade has not been thrown yet. The panel
+    /// hides on this, and that gap is the difference between the panel waiting its turn and
+    /// it blinking on for a few frames before the cards come down.
+    /// </summary>
+    public bool Celebrating =>
+        cascade.IsRunning || (State == GameState.Won && celebratedDeal != Board.DealId);
 
     /// <summary>
     /// Whether this is a moment worth asking the player their name. A win is what asks, not a
@@ -216,9 +223,10 @@ internal sealed class Solitaire : ISolitaireView
             return;
         }
 
-        // The cascade has already been ruled out above, so a finished game is a panel on
-        // screen.
-        Do(controls.Down(x, y, touch, CanFastForward, CanUndo, State != GameState.Playing));
+        // The panel is pressable exactly when it is painted — which is not simply "the game
+        // is over": the celebration holds it back, and a button nobody can see must not take
+        // a press meant for the board behind it.
+        Do(controls.Down(x, y, touch, CanFastForward, CanUndo, State != GameState.Playing && !Celebrating));
     });
 
     public void OnPointerUp(double x, double y) => Guarded(() =>
