@@ -51,9 +51,6 @@ internal sealed class CanvasDrawer : IGameDrawer
     private const double CompactCornerSuitSize = 0.13;
     private const double CompactCentreSuit = 0.36;
 
-    /// <summary>How much bigger a card is drawn while it is being carried.</summary>
-    private const double DragScale = 1.06;
-
     // Pip columns and the rows they sit on.
     private const double ColLeft = 0.37;
     private const double ColMid = 0.50;
@@ -473,21 +470,21 @@ internal sealed class CanvasDrawer : IGameDrawer
             await ctx.SetShadowBlurAsync(12);
             await ctx.SetShadowOffsetYAsync(6);
 
-            // A shade larger than the board it is being moved across, about its own centre.
-            // Held things are nearer, and the drop is hit-tested from that same centre, so
-            // growing the card cannot move where it lands.
-            double grow = layout.CardWidth * (DragScale - 1) / 2;
-
             // One call, whatever the stack. The cards themselves were drawn into their own
             // canvas when they were picked up — see RenderHeld — and the whole of it is
             // blitted with the stack sitting at its top-left corner, so moving the stack is
             // a matter of where the image goes rather than of drawing the cards again.
+            //
+            // One to one, and on whole pixels, so a held card is exactly as sharp as the
+            // board it is crossing. The shadow above is what says it is being carried; it
+            // used to be drawn a shade larger as well, which said the same thing less
+            // clearly and cost a resample of the one card the player is looking at.
             await ctx.DrawImageAsync(
                 heldElement,
-                drag.X - drag.OffsetX - grow,
-                drag.Y - drag.OffsetY - grow,
-                layout.Width * DragScale,
-                layout.Height * DragScale);
+                Snap(drag.X - drag.OffsetX),
+                Snap(drag.Y - drag.OffsetY),
+                layout.Width,
+                layout.Height);
 
             await ctx.SetShadowColorAsync("rgba(0, 0, 0, 0)");
             await ctx.SetShadowBlurAsync(0);
@@ -1059,6 +1056,9 @@ internal sealed class CanvasDrawer : IGameDrawer
     /// and everything else transparent. Only when what is held has changed: a stack keeps the
     /// same cards, the same order, and the same size for the whole of a drag, so this runs
     /// once per pick-up and the frames in between are a single blit.
+    ///
+    /// Drawn at the size it is seen at, which is the size every other card is, so the faces
+    /// come out of the atlas like everything else.
     /// </summary>
     private async ValueTask RenderHeld(DragState drag, BoardLayout layout)
     {
