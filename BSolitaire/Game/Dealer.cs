@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace BSolitaire.Game;
 
 internal sealed class Dealer
@@ -40,15 +42,9 @@ internal sealed class Dealer
             }
         }
 
-        // shuffle the deck
-        var rng = new Random();
-        int n = deck.Count;
-        while (n > 1)
-        {
-            n--;
-            int k = rng.Next(n + 1);
-            (deck[k], deck[n]) = (deck[n], deck[k]);
-        }
+        // Fisher-Yates, by way of the runtime: every ordering of the deck comes up equally
+        // often, and Random.Shared spares us both an allocation per deal and the loop.
+        Random.Shared.Shuffle(CollectionsMarshal.AsSpan(deck));
 
         return deck;
     }
