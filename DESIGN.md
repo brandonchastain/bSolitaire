@@ -1,307 +1,214 @@
 # bSolitaire — design
 
-Status: the starter template exists; the game does not. This document records the
-analysis of the template and the proposed design for the game, so the reasoning
-behind each decision survives past the conversation that produced it.
+Klondike, in Blazor WebAssembly, drawn to a 2D canvas. This document is about the
+shape of the code and why it is that shape. The README covers how to run it and
+how a frame works; this covers what is separated from what.
 
 ---
 
-## Part 1 — The starter template
-
-### Layering
+## The layering
 
 ```
-game.js          browser edge: requestAnimationFrame, DPI, resize
+game.js            browser edge: requestAnimationFrame, DPI, canvas size
    |  interop
-Home.razor       adapter: owns the loop, forwards input, owns the drawer
-   |                |
-Solitaire        IGameDrawer -> CanvasDrawer
-(pure C#)                |  reads the game
+Home.razor         host: owns the loop, forwards input, owns the drawer
+   |                    |
+Solitaire  ---------> ISolitaireView -> CanvasDrawer
+(pure C#)                                (reads the game, cannot play it)
 ```
 
-### What holds up
+Two rules hold the whole thing up:
 
-- `Solitaire` references no Blazor, JS, or canvas type. This is the property worth
-  protecting above all others: it lets the rules be tested in milliseconds instead
-  of by driving a browser.
-- Nothing above knows about anything below it. `Solitaire` doesn't know a drawer
-  exists; `CanvasDrawer` doesn't know a frame loop exists.
-- DPI is normalized once at the JS edge, so there is exactly one coordinate system
-  (CSS pixels) everywhere above it. Input coordinates and drawing coordinates are
-  the same numbers.
+- **Nothing above knows about anything below it.** `Solitaire` references no
+  Blazor, JS, or canvas type, so the rules are tested in milliseconds instead of
+  by driving a browser. Almost all of the test project is possible because of it.
+- **DPI is normalized once**, at the JS edge, via `setTransform(dpr, 0, ...)`.
+  There is exactly one coordinate system above it — CSS pixels — so input
+  coordinates and drawing coordinates are the same numbers. Don't reintroduce
+  device-pixel maths in the drawer.
 
-### What it doesn't answer yet
+`ISolitaireView` is the narrower half of that seam. The drawer is handed the game
+as a read-only view, so painting a picture of a position provably cannot change
+it, and a renderer cannot reach `Reset` or the pointer handlers.
 
-1. **Nobody owns geometry.** The drawer needs to know where pile 3 is; the click
-   handler needs the same answer in reverse. If each computes it independently
-   they drift, and cards render correctly while the hit box sits 8px off. This is
-   the central decision for a canvas card game and it is currently unassigned.
-2. **`IGameDrawer.Draw(Solitaire)` decouples technology, not shape.** Swapping
-   canvas for WebGL is free; changing how piles are modelled still ripples into
-   the drawer, because the drawer must read the model's structure. That is fine
-   and normal — just don't mistake the seam for more isolation than it gives.
-3. **One `OnClick` cannot express a drag.** Click-to-select-then-click-to-place
-   works with what's there. Drag-and-drop needs down/move/up.
-4. **`Update(elapsed)` currently earns nothing.** Solitaire is event-driven; the
-   parameter starts paying for itself only when card-flight animations exist.
-   Keep it — it will be wanted — but know it is speculative today.
-
-### One thing the template got wrong
-
-`BeginBatchAsync`/`EndBatchAsync` was stripped out of the drawer as bTetris cruft.
-For tetris it nearly was. For solitaire it isn't. Every `SetFillStyleAsync` /
-`FillRectAsync` in this package is a separate JS interop round trip; a
-procedurally drawn card costs roughly 8 of them, and a dealt Klondike board shows
-30–45 cards. That is ~300 interop calls per frame, 18k/sec at 60fps. Batching
-collapses each frame into a single `callBatch`. Put it back.
-
----
-
-## Part 2 — Proposed design
-
-### The organizing decision: geometry is its own layer
-
-Three layers instead of two, split by what kind of thing each knows about:
+## The three layers, by what each knows about
 
 | Layer | Knows about | Never knows about |
 | --- | --- | --- |
-| `Board` + `Rules` | cards, piles, legality | pixels, time, input |
-| `Solitaire` (session) | pixels, drag state, animation, undo | canvas API, Blazor |
+| `Position`, `Rules`, `Board` | cards, piles, legality | pixels, time, input |
+| `Solitaire` and its parts | pixels, drag, animation, frames | canvas API, Blazor |
 | `CanvasDrawer` | canvas API | rules |
 
-`BoardLayout` is the single source of truth for geometry, consumed by **both** the
-drawer and hit-testing. That kills the drift bug in open question 1 structurally
-rather than by discipline.
+`BoardLayout` is the single source of truth for geometry, consumed by **both**
+the drawer and hit-testing. That is what keeps cards from rendering correctly
+while the hit box sits 8px off: the two answers cannot drift because there is
+only one.
 
-### Card
+## Position and Board: cards, and the bookkeeping around them
 
-```csharp
-public enum Suit : byte { Clubs, Diamonds, Hearts, Spades }
-public enum Rank : byte { Ace = 1, Two, /* ... */ King = 13 }
+`Position` holds which cards are in which piles, in what order, and nothing else
+— it does not know a king from a two. Its lists are private and handed out
+read-only, so cards change hands only through `Take` and `Place`. That keeps the
+splice separable from everything `Board.MakeMove` has to do alongside it.
 
-public readonly record struct Card(Rank Rank, Suit Suit)
-{
-    public bool IsRed => Suit is Suit.Diamonds or Suit.Hearts;
-}
-```
+`Board` is the game in progress: it makes moves, and owns every consequence of
+one — flipping the card a move uncovered, marking piles dirty, naming a sound,
+naming a motion, recomputing won/stuck, pushing undo.
 
-Why each part of `readonly record struct`:
+`Rules` is static and takes a `Position`. It answers `CanStack`, `CanFound`,
+`IsLegal`, `CanLift`, `LegalMoves`, `IsStuck`, `FoundationFor`. `LegalMoves`
+looks like a luxury; it is not — one function underwrites stuck detection,
+playing the rest of the game out, and the solver.
 
-- **`struct` — snapshot undo becomes free.** The design clones the board before
-  every move. If `Card` were a class, copying a `List<Card>` would copy
-  *references*, so every snapshot would alias the same 52 objects and `Clone()`
-  would need a real deep copy to be safe. With a value type, copying the list
-  copies the cards; snapshots cannot alias. This is what makes "just clone the
-  board" a defensible undo strategy rather than a trap.
-- **`record` — cards get compared constantly.** `record struct` generates
-  `Equals`, `GetHashCode`, and `==` comparing fields. A plain struct defines no
-  `==` at all and falls back to the slow `ValueType.Equals` path; a class gives
-  reference equality, which is silently wrong — two Ace-of-Spades values should
-  be equal.
-- **`readonly`** — states the intent, and avoids defensive copies when the
-  compiler passes the value by `in` or reads it from a readonly field.
-- **`: byte` on the enums** — enums default to `int`, making `Card` 8 bytes;
-  byte-backed makes it 2, so a whole deck is ~104 bytes. Irrelevant to framerate,
-  but it is what makes cloning the board on every move not worth thinking about.
+**Piles are named by what is showing, not by their role.** `PileKind` is
+`FaceDown`, `FaceUp`, `Foundation`, `Tableau` — the stock is the face-down pile
+and the waste is the face-up one. Face-up-ness is a flag on `Card`, and the
+flip-on-uncover rule lives in exactly one place inside `MakeMove`, which is the
+only reason a flag is safe: forgetting it in a second place is the classic
+Klondike bug, and there is no second place.
 
-It also buys pattern matching, which reads well in rules code:
+`Card` is a mutable class rather than a value type, precisely because that flag
+is per-card state that has to survive being copied around in lists. Undo is what
+pays for it — see below.
 
-```csharp
-if (card is { Rank: Rank.Ace }) ...
-var (rank, suit) = card;
-```
+**Everything the rules judge is a `Move`.** `Move(Location From, Location To,
+int Count)`; turning a card off the stock is `FaceDown/0 -> FaceUp/0, 1`. One
+representation means legality, application, undo, and the solver each have one
+implementation rather than one per action type. Recycling the waste is the
+deliberate exception: it touches every card at once and there is no legality
+question to ask, so it is its own method.
 
-**The one real cost:** `default(Card)` is representable and invalid — `(Rank)0`
-is not a rank, since `Ace = 1`. A struct cannot prevent `default`. Two
-mitigations, both already in the design: never store a `default` (cards only come
-from a deal), and use `Card?` for "there may be no card here" — which is why
-`CanFound` below takes `Card? top` rather than a sentinel. `Nullable<Card>` over
-a 2-byte struct is still cheap.
+## Undo by snapshot
 
-The counterargument to a struct would be wanting per-card mutable state
-(selected, animating). That state belongs to the drag/animation layer keyed by
-location, not to the card, so it never comes up.
+Push a snapshot before every move; undo pops it. The alternative — an `Undo(Move)`
+that inverts each kind of move — is where solitaire codebases rot, because the
+inverse has to remember incidental effects: did this move flip a card? was the
+waste recycled? Not working out what the consequences were is cheaper and safer
+than working them out correctly.
 
-### Piles: make face-up-ness structural
+The snapshot holds cards **by reference** — they are the same fifty-two objects
+for the life of a deal — but copies each card's face-up-ness into a parallel
+array, because that is exactly the state a move changes behind the player's back.
+Restoring calls `SetFaceUp(value)`, not `Flip()`: putting a position back means
+saying what was true then, not counting turns since.
 
-```csharp
-public sealed class TableauPile
-{
-    public List<Card> Down { get; } = new();
-    public List<Card> Up   { get; } = new();
-}
-```
+History is capped at 200 so a very long game cannot grow it without bound.
 
-No `FaceUp` flag on the card. With a flag, "flip the newly exposed card" is a
-rule enforced by vigilance in several places, and forgetting it in one of them is
-the classic Klondike bug. With two lists it is one line in one place — flip if
-`Up` is empty and `Down` isn't — and an inconsistent state is unrepresentable.
+## Frames, and who gets a slice of one
 
-Stock is all face-down, waste and foundations are all face-up, so no other pile
-needs the concept at all.
+`Solitaire` is a session: it owns the pieces and hands each one its slice of a
+frame. It holds no game logic of its own beyond carrying out the handful of
+commands a player can ask for.
 
-### Everything is a Move
+| Piece | Holds |
+| --- | --- |
+| `Controls` | the key map and the corner buttons; turns input into a `PlayerCommand` |
+| `PointerInput` | grab / drag / drop / tap-to-select, and the drop-target set |
+| `BoardLayout` | card size, pile positions, hit testing |
+| `Animator` | `Motion` values from the board become cards crossing the felt |
+| `WinCascade` | the fountain a won deal throws down the board |
+| `FastForward` | paces playing the rest of the game out, a card at a time |
+| `Analyzer` | gives the `Solver` a slice of each frame |
+| `ScoreKeeper` | the running record, mute, and the stats overlay |
 
-```csharp
-public enum PileKind { Stock, Waste, Foundation, Tableau }
-public readonly record struct Location(PileKind Kind, int Index);
-public readonly record struct Move(Location From, Location To, int Count);
-```
+Everything is on one thread, so a slice and a draw are strictly in series. That
+is why the `Analyzer` has a 4ms per-frame budget and pauses entirely while a
+stack is held: a drag is the one time the board animates continuously, and the
+search is the one thing big enough to be felt inside a frame.
 
-Drawing from the stock is `Move(Stock/0 -> Waste/0, 1)`. Recycling the waste is
-`Move(Waste/0 -> Stock/0, all)`. Making every action a `Move` means legality,
-application, undo, hints, and auto-finish each have exactly one implementation
-instead of one per action type.
+`NeedsRedraw` is the other half of that economy. A solitaire board is static
+almost all the time, so the host skips drawing until something changes — the
+canvas keeps the last frame either way.
 
-```csharp
-public static class Rules
-{
-    public static bool CanStack(Card moving, Card onto);   // alternating colour, descending
-    public static bool CanFound(Card moving, Card? top);   // same suit, ascending, Ace on empty
-    public static bool IsLegal(Board board, Move move);
-    public static IEnumerable<Move> LegalMoves(Board board);
-}
-```
+## Moves land instantly; animation runs a step behind
 
-`LegalMoves` looks like a luxury. It isn't — one function gives you the hint
-button, auto-finish ("send everything home"), stuck-game detection, and a solver
-you can run over thousands of seeds to check the deal is fair. Build it early.
+A move changes the position in one step. That is what keeps the rules, the tests,
+and the solver simple — they all see a single transition — and it is why
+animation is a separate thing.
 
-### Undo by snapshot, not by inverse
+The board appends `Motion` values as it moves cards, the same way it appends
+`Sound` values, and something that knows the geometry decides what those look
+like and how long they take. A motion is a description of a change that has
+*already happened*, not a request for one. A card in flight is held out of the
+pile it is flying to (`HiddenFrom`), so it is drawn once rather than twice.
 
-Push `board.Clone()` before every `Apply`; undo is `history.Pop()`.
+Both queues are capped, because they are drained only by a running frame loop: if
+drawing stops, they stop growing rather than growing for the rest of the session.
 
-The tempting alternative — an `Undo(Move)` that reverses each move type — is
-where solitaire codebases rot, because the inverse must remember incidental
-effects: did this move cause a flip? was the waste recycled? A `Board` is 52
-cards; cloning it is free at human timescales. Keep a `Stack<Board>` and pop.
+## Search
 
-(A fully immutable `Board` whose `Apply` returns a new instance gets the same
-benefit with every rule pure, at the cost of slightly more ceremony. Equally
-valid; mutable-plus-clone is the lower-friction version of the same idea.)
+`Solver` asks the full-information question — is this deal still winnable by
+someone who can see the face-down cards — which is decidable, unlike the question
+the player faces. Positions are packed into a fixed byte layout and every
+expanded position is remembered, so the search terminates on its own; the budget
+caps how long and how much memory that takes, not whether it stops.
 
-### Geometry
+It is resumable: `Step` does a slice and returns, so the search rides the frame
+loop instead of freezing the board. Running out of budget yields `Unknown`, never
+a wrong answer — `Unwinnable` is reported only after the entire tree below the
+position has been examined. `Board.Version` is bumped by every position change so
+the search notices the board moving out from under it and restarts.
 
-```csharp
-public readonly record struct Rect(double X, double Y, double W, double H);
+## Drawing: find what isn't changing, draw it once, blit it
 
-public sealed class BoardLayout
-{
-    public BoardLayout(double width, double height);   // recompute on resize
-    public double CardWidth  { get; }
-    public double CardHeight { get; }
+Every canvas call is a hop into JS, so what costs is the number of calls, not the
+number of pixels. The whole drawing strategy is one idea applied to three
+off-screen canvases — a cache of the settled board, the held stack, and an atlas
+of all fifty-two faces at the current card size. The README has the table and the
+measurements.
 
-    public Rect CardRect(Location loc, int indexInPile);   // fan offset applied
-    public Rect EmptySlot(Location loc);
-    public bool TryHitTest(double x, double y, out Location loc, out int index);
-}
-```
+The atlas is the one that matters: it makes a card cost one call wherever it is
+going — in flight, in a pile, held, or bouncing off the bottom of the screen.
 
-One rule for `TryHitTest`: iterate **top-most first** — later piles before
-earlier, and within a fanned tableau the last card before the ones underneath it.
-Overlapping cards mean the first match in draw order is the wrong answer.
+Draw order is backgrounds, settled piles, the held stack, cards in flight, then
+the cascade. `TryHitTest` runs the other way — top-most first, later piles before
+earlier ones and the last card of a fanned column before those under it — because
+with overlapping cards the first match in draw order is the wrong answer.
 
-### Interaction as an explicit state machine
+## Layout blends; it does not switch
 
-Drag state is pixels, so it lives in `Solitaire`, never in `Board`:
+Seven columns and their gutters must fit across the window. `Compactness` runs
+from 1 on a handset to 0 on a window, and gutters, margins, and fan are
+interpolated across it. Nothing here is allowed to be a step: a threshold made
+the card jump nine per cent *downwards* as the window got wider, because a board
+that has just started paying for desktop gutters has less left over for card.
+**Widening a window must never take card away.**
 
-```csharp
-private sealed record Drag(Location From, int Index, List<Card> Cards,
-                           double GrabOffsetX, double GrabOffsetY,
-                           double X, double Y);
-```
+The face is a separate question, about the card rather than the screen: below
+64px a card gets a jumbo index and one large suit instead of a pip layout, and
+that is as true of a desktop window dragged narrow as it is of a phone.
 
-`Idle` -> `PointerDown` (hit-test; is the grab legal?) -> `Dragging` ->
-`PointerUp` (hit-test the drop target; `Rules.IsLegal` ? apply : snap back) ->
-`Idle`.
+## Where a variant would go
 
-This replaces `OnClick` in `Home.razor` with `@onpointerdown` / `@onpointermove`
-/ `@onpointerup`, all of which supply `PointerEventArgs.OffsetX/OffsetY`. **No
-`game.js` change is needed** — drag is pure Blazor. One caveat: if the pointer
-leaves the board mid-drag, either handle `@onpointerleave` to cancel or add a
-small JS `setPointerCapture` call so the drag survives.
-
-### Rendering
-
-Draw order: pile backgrounds -> stock/waste/foundations -> tableau piles -> the
-dragged stack -> in-flight animations. Dragged and flying cards render last so
-they float above everything.
-
-Two performance moves, in order of value:
-
-1. **Dirty flag.** A solitaire board is static most of the time.
-   `Solitaire.NeedsRedraw`, set by any mutation or drag movement, cleared by
-   `Home` after `Draw`, forced true while an animation runs. Idle cost drops to
-   zero draws per second. This matters more than anything else here.
-2. **Batch.** Wrap `CanvasDrawer.Draw` in `BeginBatchAsync` / `EndBatchAsync`.
-
-If more headroom is wanted later, the package has `DrawImageAsync`: pre-render
-the 52 faces once onto a hidden second `<BECanvas>` and blit them, turning ~8
-calls per card into 1. Don't do this until it has been measured — start
-procedural, since it costs zero assets.
-
-### Files
-
-```
-Game/
-  Card.cs          Suit, Rank, Card
-  Location.cs      PileKind, Location, Move
-  Board.cs         piles, Deal(seed), Apply(Move), Clone()
-  Rules.cs         CanStack, CanFound, IsLegal, LegalMoves, IsStuck
-  BoardLayout.cs   Rect, CardRect, EmptySlot, TryHitTest
-  Solitaire.cs     session: board + layout + drag + undo + animation
-  IGameDrawer.cs   (unchanged)
-  CanvasDrawer.cs  batched draw
-```
-
-### Build order
-
-1. **`Board` + `Rules` + `Deal`, with an xUnit project, before drawing a single
-   card.** This is the payoff of keeping `Solitaire` free of Blazor: correct,
-   tested Klondike rules with no rendering at all, so the visual work is never
-   debugging two things at once.
-2. Static draw of a dealt board.
-3. Click-to-move (no drag).
-4. Drag.
-5. Undo, win detection, auto-finish, hint.
-6. Animations, then the batching/dirty pass.
-
-### The seam for variants
-
-This designs Klondike concretely rather than building a rules engine; variant
-frameworks written before one variant works are almost always wrong. But note
-where the seam would go: `Deal(Random)` and `IsLegal(Board, Move)` are the only
-two functions that encode which game it is. Everything else — layout, drag, undo,
-drawing — is variant-agnostic. Pull those two behind an interface when a second
-variant exists, not before.
+This is Klondike concretely, not a rules engine; variant frameworks written
+before one variant works are almost always wrong. But the seam is visible:
+`Dealer.Deal` and `Rules.IsLegal` are the only two things that encode which game
+this is. Layout, drag, undo, animation, and drawing are all variant-agnostic.
+Pull those two behind an interface when a second variant exists, not before.
 
 ---
 
-## Appendix — notes on the toolchain
+## Appendix — toolchain notes
 
-Facts established while building the template, recorded so they don't have to be
-rediscovered.
+Facts established while building, recorded so they don't have to be rediscovered.
 
 **`Blazor.Extensions.Canvas` 1.1.1** targets netstandard2.1 and dates from 2020,
-but works on net9 — verified by driving a frame and reading back canvas pixels.
-Available: `BeginBatchAsync`/`EndBatchAsync`, `DrawImageAsync`,
-`MeasureTextAsync`, `SaveAsync`/`RestoreAsync`, `TranslateAsync`/`RotateAsync`/
-`ScaleAsync`, `ClipAsync`, `ArcAsync`/`ArcToAsync`, `BezierCurveToAsync`/
-`QuadraticCurveToAsync`, `SetShadow*Async`, `SetLineDashAsync`,
-`SetTextAlignAsync`/`SetTextBaselineAsync`. **Not** available: `RoundRect` — the
-package predates it, so rounded card corners need a manual `ArcTo` path, or plain
-`FillRect`/`StrokeRect` to start.
+but works on net9. It has `BeginBatchAsync`/`EndBatchAsync`, `DrawImageAsync`,
+`MeasureTextAsync`, save/restore, transforms, clipping, arcs, curves, shadows,
+line dashes, and text alignment. It does **not** have `RoundRect` — it predates
+it, so rounded corners are a manual `ArcTo` path.
 
 **`_Imports.razor` needs both `@using Blazor.Extensions` and `@using
-Blazor.Extensions.Canvas`.** With only the first, `BECanvasComponent` resolves in
-C# but the `<BECanvas>` tag silently degrades to a plain HTML element, and `@ref`
-then fails to compile with a confusing `ElementReference` conversion error.
+Blazor.Extensions.Canvas`.** With only the first, `<BECanvas>` silently degrades
+to a plain HTML element and `@ref` fails to compile with a confusing
+`ElementReference` conversion error.
 
-**`requestAnimationFrame` is suspended while the browser tab or preview pane is
-hidden.** An apparently dead game loop and a blank canvas may just mean nothing is
-compositing. To verify rendering headlessly, drive one frame directly via
+**`requestAnimationFrame` is suspended while the tab or preview pane is hidden.**
+An apparently dead loop and a blank canvas may just mean nothing is compositing.
+To verify rendering headlessly, drive one frame via
 `dotNet.invokeMethodAsync('OnFrame', 0)` and read pixels back with `getImageData`.
 
-**DPI is handled once**, in `game.js`, via `setTransform(dpr, 0, 0, dpr, 0, 0)`.
-Everything above it works in CSS pixels. Don't reintroduce device-pixel maths in
-the drawer.
+**The game assembly is `internal` throughout,** with `InternalsVisibleTo` for the
+test project. This is an application, not a library — that is what lets members
+be `public` where an interface requires it without any of them becoming API, and
+it lets the tests arrange positions by hand.
