@@ -526,6 +526,23 @@ internal sealed class CanvasDrawer : IGameDrawer
         lastDrawMs = clock.Elapsed.TotalMilliseconds - startedAt;
     }
 
+    /// <summary>
+    /// What the search has established, said no more strongly than it was proved.
+    ///
+    /// The solver models the stock as a set and not a sequence, so it can reach any card in
+    /// it at any time. That is exactly right for a draw of one, which can cycle to any card
+    /// and back; under a draw of three it is more freedom than the player has, so a win it
+    /// finds may use a card the real deal would never surface. The verdict is marked for
+    /// what it is in that mode.
+    ///
+    /// Unwinnable needs no such mark in either mode. A model with more freedom that still
+    /// cannot win is proof that the stricter one cannot either.
+    /// </summary>
+    private static string Verdict(ISolitaireView game) =>
+        game.Analysis == SolveResult.Winnable && game.Board.DrawCount > 1
+            ? "Winnable (draw-1)"
+            : game.Analysis.ToString();
+
     /// <summary>Seconds as minutes and seconds, or a dash where there is no answer yet —
     /// a player with no wins has no average win, and a zero there would be a lie.</summary>
     private static string Clock(long? seconds)
@@ -985,7 +1002,9 @@ internal sealed class CanvasDrawer : IGameDrawer
         recentDraws.Enqueue(now);
 
         string line =
-            $"{lastDrawMs,5:F1} ms   {recentDraws.Count,3} draws/s   search {game.Analysis} {game.AnalysisNodes,7:N0}";
+            $"{lastDrawMs,5:F1} ms   {recentDraws.Count,3} draws/s   " +
+            $"search {Verdict(game)} {game.AnalysisNodes,7:N0}   " +
+            $"tossed {game.DealsDiscarded}   unvetted {game.DealsUnvetted}";
 
         if (line.Length * layout.GlyphWidth > row.StatsRoom)
         {

@@ -796,6 +796,44 @@ public class PiecesTests
     }
 
     [Fact]
+    public void ADealHandedOutWithoutBeingVettedIsCounted()
+    {
+        // Rare by construction, and silent until now. If it ever moves in real play, the
+        // attempt count or the wait is wrong for that machine, and that is worth seeing.
+        var vetter = new DealVetter();
+
+        Assert.Equal(0, vetter.Unvetted);
+
+        // Nothing has been prepared, so this searches there and then — and either finds
+        // one inside its ceiling or gives up and says so.
+        var deal = vetter.TakeDeal();
+
+        if (deal is null)
+        {
+            Assert.Equal(1, vetter.Unvetted);
+        }
+        else
+        {
+            Assert.Equal(0, vetter.Unvetted);
+        }
+    }
+
+    [Fact]
+    public void AVettedDealIsNeverCountedAsUnvetted()
+    {
+        var vetter = new DealVetter();
+
+        for (int frame = 0; frame < 4000 && !vetter.HasDeal; frame++)
+        {
+            vetter.Update(paused: false);
+        }
+
+        Assert.True(vetter.HasDeal);
+        Assert.NotNull(vetter.TakeDeal());
+        Assert.Equal(0, vetter.Unvetted);
+    }
+
+    [Fact]
     public void AVetterToldToStandDownDoesNothing()
     {
         var vetter = new DealVetter();

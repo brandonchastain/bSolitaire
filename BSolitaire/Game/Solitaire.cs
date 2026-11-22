@@ -185,6 +185,13 @@ internal sealed class Solitaire : ISolitaireView
     /// <summary>How the search on the current position is going.</summary>
     public SolveResult Analysis => analyzer.Result;
 
+    /// <summary>Candidate deals the vetter has thrown away this session.</summary>
+    public int DealsDiscarded => vetter.Discarded;
+
+    /// <summary>Deals handed out without being vetted, because the wait ran out. Expected
+    /// to stay at zero; worth seeing if it does not.</summary>
+    public int DealsUnvetted => vetter.Unvetted;
+
     /// <summary>Positions the search has examined on the current board.</summary>
     public int AnalysisNodes => analyzer.Nodes;
 

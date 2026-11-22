@@ -54,6 +54,10 @@ internal interface ISolitaireView
 
     int AnalysisNodes { get; }
 
+    int DealsDiscarded { get; }
+
+    int DealsUnvetted { get; }
+
     string? Error { get; }
 
     int HiddenFrom(Location loc);
