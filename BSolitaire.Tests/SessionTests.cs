@@ -382,6 +382,34 @@ public class SessionTests
         Assert.NotNull(game.GrabbablePile);
     }
 
+    [Fact]
+    public void ADealTheSessionGivesOutHasAWinInIt()
+    {
+        // End to end, and the one that matters: the session asks the vetter, the vetter
+        // hands over an order it has proved a win in, and the board deals that order.
+        // Break any link in that chain and lost deals go back in front of the player, which
+        // is the whole point of the thing — and nothing else here would notice.
+        var game = Sized();
+        game.Begin();
+
+        // The idle frames a game in progress would have given it.
+        for (int frame = 0; frame < 3000; frame++)
+        {
+            game.Update(TimeSpan.FromMilliseconds(frame * 16));
+        }
+
+        game.OnKeyDown("KeyR");
+
+        var solver = new Solver(game.Board.Position);
+
+        while (!solver.Done)
+        {
+            solver.Step(1_000_000, TimeSpan.FromSeconds(10));
+        }
+
+        Assert.Equal(SolveResult.Winnable, solver.Result);
+    }
+
     private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
 
     /// <summary>A game sized like a real viewport, so the buttons are where the layout puts

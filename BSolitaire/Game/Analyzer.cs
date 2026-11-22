@@ -38,6 +38,12 @@ internal sealed class Analyzer
     public int Nodes => solver?.Nodes ?? 0;
 
     /// <summary>
+    /// Whether this has finished with the position in front of it, so the frame's slice is
+    /// going spare. True on a board that is over, where there is nothing to ask.
+    /// </summary>
+    public bool Done => solver is null || solver.Done;
+
+    /// <summary>
     /// Gives the search its slice of one frame, and reports whether the board changed as a
     /// result — the only way it can is a position being proved dead.
     /// </summary>

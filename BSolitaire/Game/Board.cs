@@ -139,12 +139,17 @@ internal class Board
         return true;
     }
 
-    /// <summary>Shuffles a new deck and deals it. The old game is simply dropped.</summary>
-    public void Reset()
+    /// <summary>Deals a new game. The old one is simply dropped.</summary>
+    /// <param name="deal">
+    /// The deck to deal, or null to shuffle a fresh one. Named deals are how a game can be
+    /// chosen before it is played — see <see cref="DealVetter"/>, which only hands over deals
+    /// a search has found a win in.
+    /// </param>
+    public void Reset(IReadOnlyList<(Suit Suit, Rank Rank)>? deal = null)
     {
         history.Clear();
         Position.Strip();
-        Dealer.Deal(Position);
+        Dealer.Deal(Position, deal);
         Play(Sound.Deal);
         AnnounceDeal();
         AllDirty = true;
