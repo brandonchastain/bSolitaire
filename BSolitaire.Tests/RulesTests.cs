@@ -241,4 +241,108 @@ public class RulesTests
 
         Assert.False(Rules.IsStuck(board.Position));
     }
+
+    [Fact]
+    public void ADeckCardThatUnlocksNothingDoesNotKeepADealAlive()
+    {
+        // The deal this is all for. The ace in the stock has a home, so the old answer was
+        // that the game was still on — and the player had to cycle the deck, play it, and
+        // find out there was nothing underneath. There is one thing to do and it leads
+        // nowhere, so the deal is over now rather than three moves from now.
+        var board = Empty();
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.King));
+        board.Position.Place(Stock, Down(Suit.Diamonds, Rank.Ace));
+
+        Assert.True(Rules.IsStuck(board.Position));
+    }
+
+    [Fact]
+    public void AForcedPlayThatOpensSomethingUpKeepsTheDealAlive()
+    {
+        // The same shape, except that sending the ace home gives the two a foundation to
+        // follow it onto. Following the line is the only way to tell these two apart.
+        var board = Empty();
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        board.Position.Place(Tableau(1), Up(Suit.Diamonds, Rank.Two));
+        board.Position.Place(Stock, Down(Suit.Diamonds, Rank.Ace));
+
+        Assert.False(Rules.IsStuck(board.Position));
+    }
+
+    [Fact]
+    public void ADeckCardWithTwoPlacesToGoIsLeftToThePlayer()
+    {
+        // The red ace can go home or onto either black two. Both lines happen to die, but
+        // which is taken is the player's to decide, and a check that picks for them is one
+        // that will eventually pick wrong and end a game somebody could have won.
+        var board = Empty();
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.Two));
+        board.Position.Place(Tableau(2), Up(Suit.Clubs, Rank.Two));
+        board.Position.Place(Stock, Down(Suit.Hearts, Rank.Ace));
+
+        Assert.False(Rules.IsStuck(board.Position));
+    }
+
+    [Fact]
+    public void TwoPlayableDeckCardsAreLeftToThePlayerToo()
+    {
+        // Two aces, each with one place to go, but the order is a choice and the order can
+        // matter. Neither line is forced, so neither is followed.
+        var board = Empty();
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        board.Position.Place(Stock, Down(Suit.Diamonds, Rank.Ace));
+        board.Position.Place(Stock, Down(Suit.Clubs, Rank.Ace));
+
+        Assert.False(Rules.IsStuck(board.Position));
+    }
+
+    [Fact]
+    public void FollowingTheLineNeverMovesTheRealCards()
+    {
+        // The check runs after every move, on the position the board is about to be drawn
+        // from. It works on copies; if it ever worked on the originals the player would
+        // watch cards leave the stock on their own.
+        var board = Empty();
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.King));
+        board.Position.Place(Stock, Down(Suit.Diamonds, Rank.Ace));
+
+        Rules.IsStuck(board.Position);
+
+        Assert.Single(board.Position.FaceDownPile);
+        Assert.Equal(Rank.Ace, board.Position.FaceDownPile[0].Rank);
+        Assert.False(board.Position.FaceDownPile[0].IsFaceUp);
+        Assert.Empty(board.Position.FoundationPiles[0]);
+    }
+
+    [Fact]
+    public void TheStockTurnsOverAsManyCardsAsTheDealIsPlayedWith()
+    {
+        // Nothing passes three yet — draw-three is the next change — but the stuck check and
+        // the fast-forward both read their moves from here, so the count has to arrive as
+        // part of the question rather than as a constant.
+        var board = new Board();
+
+        Assert.Contains(
+            Rules.LegalMoves(board.Position, 3),
+            move => move.From.Kind == PileKind.FaceDown && move.Count == 3);
+
+        Assert.Contains(
+            Rules.LegalMoves(board.Position),
+            move => move.From.Kind == PileKind.FaceDown && move.Count == 1);
+    }
+
+    [Fact]
+    public void AStockShorterThanTheDrawTurnsOverWhatIsLeft()
+    {
+        var board = Empty();
+        board.Position.Place(Stock, Down(Suit.Hearts, Rank.Nine));
+        board.Position.Place(Stock, Down(Suit.Spades, Rank.Ten));
+
+        Assert.Contains(
+            Rules.LegalMoves(board.Position, 3),
+            move => move.From.Kind == PileKind.FaceDown && move.Count == 2);
+    }
 }

@@ -3,6 +3,21 @@ namespace BSolitaire.Game;
 
 internal static class Rules
 {
+    /// <summary>What a deck the player may turn over indefinitely can still put in front of
+    /// them. <see cref="Several"/> and <see cref="Nothing"/> are not degrees of the same
+    /// thing: one is a deal with choices left in it, the other is a deal that is over.</summary>
+    private enum DeckOffer
+    {
+        /// <summary>No card the deck can reach has anywhere to go.</summary>
+        Nothing,
+
+        /// <summary>Exactly one card, with exactly one place to put it.</summary>
+        One,
+
+        /// <summary>More than one play, so what happens next is the player's choice.</summary>
+        Several
+    }
+
     public static bool CanStack(Card moving, Card? onto)
     {
         if (onto == null)
@@ -203,11 +218,18 @@ internal static class Rules
     /// included; recycling the waste is not, since it is not expressed as a move. Whether a
     /// move is any *use* is a separate question — see <see cref="IsStuck"/>.
     /// </summary>
-    public static IEnumerable<Move> LegalMoves(Position position)
+    /// <param name="drawCount">How many cards a turn of the stock brings over. Carried as a
+    /// parameter rather than read from somewhere because it belongs to the deal being played,
+    /// and the stuck check and the fast-forward must both judge the deal actually in front of
+    /// the player rather than a constant.</param>
+    public static IEnumerable<Move> LegalMoves(Position position, int drawCount = 1)
     {
         if (position.FaceDownPile.Count > 0)
         {
-            yield return new Move(new Location(PileKind.FaceDown, 0), new Location(PileKind.FaceUp, 0), 1);
+            yield return new Move(
+                new Location(PileKind.FaceDown, 0),
+                new Location(PileKind.FaceUp, 0),
+                Math.Min(drawCount, position.FaceDownPile.Count));
         }
 
         foreach (var from in Sources(position))
@@ -251,9 +273,9 @@ internal static class Rules
     /// them has a home. Conservative by design: any move a player could actually make,
     /// including pulling a card back off a foundation, counts as a move.
     /// </summary>
-    public static bool IsStuck(Position position)
+    public static bool IsStuck(Position position, int drawCount = 1)
     {
-        foreach (var move in LegalMoves(position))
+        foreach (var move in LegalMoves(position, drawCount))
         {
             if (IsProgress(position, move))
             {
@@ -261,23 +283,10 @@ internal static class Rules
             }
         }
 
-        foreach (var card in position.FaceDownPile)
-        {
-            if (HasHome(position, card))
-            {
-                return false;
-            }
-        }
-
-        foreach (var card in position.FaceUpPile)
-        {
-            if (HasHome(position, card))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        // Nothing on the board moves, so the deal is over unless the deck can still put
+        // something playable under the player's hand. Asking that properly means walking the
+        // pass rather than scanning the deck, and then following where the pass leads.
+        return TheDeckOffersNothing(position, drawCount);
     }
 
     /// <summary>
@@ -318,6 +327,219 @@ internal static class Rules
 
         return null;
     }
+    /// <summary>
+    /// Whether a deck that can be turned over for as long as the player likes has nothing left
+    /// to offer — and, when the only thing it offers is forced, whether what follows is any
+    /// better.
+    ///
+    /// The old answer was to look for any card in the stock or waste with somewhere to go.
+    /// That is right as far as it goes, but it stops one question short: a single card with a
+    /// home keeps a deal alive even when playing it unlocks nothing, so the player cycles the
+    /// deck, plays it, and arrives at the same dead position a few moves later having known
+    /// all along how it ends. Following the forced line says so at once.
+    ///
+    /// Only forced lines are followed, and only while they stay forced. Two playable cards, or
+    /// one card with two places to go, is a choice, and a choice means the lines differ —
+    /// proving one of them dead proves nothing about the deal. It abstains rather than guesses,
+    /// because the two ways of being wrong are not equal: a dead deal left alive is an
+    /// annoyance, and a live deal declared over is a game taken from a player who could still
+    /// have won it.
+    /// </summary>
+    private static bool TheDeckOffersNothing(Position position, int drawCount)
+    {
+        // The common answer, and the one the board asks for after nearly every move: no card
+        // the deck can reach has anywhere to go. Nothing is copied to find that out.
+        var offer = WhatTheDeckOffers(position, drawCount, out var card, out var destination);
+
+        if (offer != DeckOffer.One)
+        {
+            return offer == DeckOffer.Nothing;
+        }
+
+        // Exactly one play, so the line is forced. Follow it — on copies of the cards, because
+        // the position being judged is the one the board is about to be drawn from.
+        var line = Copy(position);
+        offer = WhatTheDeckOffers(line, drawCount, out card, out destination);
+
+        // Each round takes a card out of the deck, so the deck is the bound.
+        for (int round = 0; round < 52 && offer == DeckOffer.One; round++)
+        {
+            Play(line, card!, destination);
+
+            foreach (var move in LegalMoves(line, drawCount))
+            {
+                if (IsProgress(line, move))
+                {
+                    // The forced play opened something up after all.
+                    return false;
+                }
+            }
+
+            offer = WhatTheDeckOffers(line, drawCount, out card, out destination);
+        }
+
+        return offer == DeckOffer.Nothing;
+    }
+
+    /// <summary>
+    /// What the deck has for the player: nothing playable at all, exactly one play, or a
+    /// choice between several. Only the middle one comes with a card and a destination.
+    /// </summary>
+    private static DeckOffer WhatTheDeckOffers(
+        Position position,
+        int drawCount,
+        out Card? card,
+        out Location destination)
+    {
+        card = null;
+        destination = default;
+
+        foreach (var surfacing in Surfacing(position, drawCount))
+        {
+            bool found = false;
+
+            foreach (var to in Homes(position, surfacing))
+            {
+                if (found || card is not null)
+                {
+                    // A second place for this card, or a second playable card. Which is
+                    // taken, and in which order, can change where the deal goes.
+                    card = null;
+                    return DeckOffer.Several;
+                }
+
+                found = true;
+                destination = to;
+            }
+
+            if (found)
+            {
+                card = surfacing;
+            }
+        }
+
+        return card is null ? DeckOffer.Nothing : DeckOffer.One;
+    }
+
+    /// <summary>Every place a card could legally land as the position stands.</summary>
+    private static IEnumerable<Location> Homes(Position position, Card card)
+    {
+        // One foundation, not four. Which empty pile an ace starts is no choice at all, and
+        // FoundationFor is where the game already settles that.
+        if (FoundationFor(position, card) is { } home)
+        {
+            yield return home;
+        }
+
+        foreach (var to in Destinations(position, PileKind.Tableau))
+        {
+            var pile = position.Pile(to);
+
+            if (CanStack(card, pile.Count > 0 ? pile[^1] : null))
+            {
+                yield return to;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Takes a card out of the deck, wherever in it the card is sitting, and puts it where it
+    /// is going. Reaching into the middle of the stock stands for the turns of the stock that
+    /// would bring the card to the top of the waste, which cost the player nothing but time
+    /// and leave the order of everything else alone.
+    ///
+    /// Nothing is turned over on the way. A card played off the waste covers nothing, so no
+    /// card is uncovered by this, and the flip-on-uncover rule stays where it belongs, in
+    /// <see cref="Board.MakeMove"/>, with no second copy of it here to forget.
+    /// </summary>
+    private static void Play(Position line, Card card, Location destination)
+    {
+        LiftOut(line, new Location(PileKind.FaceDown, 0), card);
+        LiftOut(line, new Location(PileKind.FaceUp, 0), card);
+
+        card.SetFaceUp(true);
+        line.Place(destination, card);
+    }
+
+    private static void LiftOut(Position line, Location loc, Card card)
+    {
+        var pile = line.Pile(loc);
+        var rest = new List<Card>(pile.Count);
+        bool lifted = false;
+
+        foreach (var other in pile)
+        {
+            if (!lifted && ReferenceEquals(other, card))
+            {
+                lifted = true;
+                continue;
+            }
+
+            rest.Add(other);
+        }
+
+        if (!lifted)
+        {
+            return;
+        }
+
+        line.Strip(loc);
+        line.Place(loc, rest);
+    }
+
+    /// <summary>
+    /// The cards the deck can bring under the player's hand. Turning the stock is always
+    /// available and the waste can be turned back over without limit, so every card down
+    /// there comes round again.
+    ///
+    /// Which of them a draw of more than one actually offers is a narrower set — only one
+    /// card of each group is ever on top of the waste — but it is not the obvious every-nth
+    /// card, because turning the waste back over reverses it and so deals the next pass in a
+    /// different grouping. A card out of reach on one pass can be in reach on the next. Until
+    /// that is worked out properly and tested against a draw-three deal actually being played,
+    /// this counts them all, which is what the game has always done. Counting a card that
+    /// cannot really be reached only keeps a dead-looking deal alive; missing one that can be
+    /// would end a game the player could still have won, and those are not the same mistake.
+    /// </summary>
+    private static IEnumerable<Card> Surfacing(Position position, int drawCount)
+    {
+        _ = drawCount;
+
+        foreach (var card in position.FaceUpPile)
+        {
+            yield return card;
+        }
+
+        foreach (var card in position.FaceDownPile)
+        {
+            yield return card;
+        }
+    }
+
+    /// <summary>A position to try things on. The cards are copies, so nothing done to it can
+    /// reach the fifty-two the player is looking at.</summary>
+    private static Position Copy(Position position)
+    {
+        var copy = new Position();
+
+        foreach (var kind in Position.AllKinds)
+        {
+            for (int i = 0; i < position.PileCountOf(kind); i++)
+            {
+                var loc = new Location(kind, i);
+
+                foreach (var card in position.Pile(loc))
+                {
+                    var clone = new Card(card.Suit, card.Rank);
+                    clone.SetFaceUp(card.IsFaceUp);
+                    copy.Place(loc, clone);
+                }
+            }
+        }
+
+        return copy;
+    }
+
     /// <summary>
     /// Whether a legal move actually changes the position. Turning the stock only cycles the
     /// deck, and moving a whole face-up column to an empty one just relabels which column is

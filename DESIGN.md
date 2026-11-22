@@ -57,8 +57,23 @@ naming a motion, recomputing won/stuck, pushing undo.
 
 `Rules` is static and takes a `Position`. It answers `CanStack`, `CanFound`,
 `IsLegal`, `CanLift`, `LegalMoves`, `IsStuck`, `FoundationFor`. `LegalMoves`
-looks like a luxury; it is not — one function underwrites stuck detection,
-playing the rest of the game out, and the solver.
+generates candidates and filters them through `IsLegal`, so a move is judged in
+one place however it was arrived at; `IsStuck` is the one thing that consumes it.
+The fast-forward asks `FoundationFor` directly, and the solver works on its own
+packed copy of the position and generates its own successors — which is why a
+draw count has to reach `Rules` as a parameter and does not reach the solver at
+all.
+
+`IsStuck` goes one question further than "can anything move". A deck that can be
+turned over indefinitely will eventually offer every card it holds, so a single
+card with somewhere to go keeps a deal alive — even when playing it unlocks
+nothing and the player can already see how it ends. When the deck forces exactly
+one play, `IsStuck` follows it on a copy of the position and asks again. Only
+forced lines, and only while they stay forced: two playable cards, or one card
+with two places to go, is a choice, and a line that was chosen proves nothing
+about the lines that were not. Being wrong in the two directions is not
+symmetric — a dead deal left alive is an annoyance, a live deal declared over is
+a game taken away — so it abstains rather than guesses.
 
 **Piles are named by what is showing, not by their role.** `PileKind` is
 `FaceDown`, `FaceUp`, `Foundation`, `Tableau` — the stock is the face-down pile
