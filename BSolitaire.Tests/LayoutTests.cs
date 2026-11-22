@@ -332,13 +332,19 @@ public class LayoutTests
 
     [Theory]
     [MemberData(nameof(Viewports))]
-    public void TheThreeCornerButtonsDoNotOverlapOrLeaveTheBoard(double width, double height)
+    public void TheCornerButtonsDoNotOverlapOrLeaveTheBoard(double width, double height)
     {
         var layout = new BoardLayout(width, height);
+        var row = new[] { layout.HintButton, layout.DrawModeButton, layout.UndoButton, layout.MuteButton };
 
-        Assert.True(layout.DrawModeButton.X + layout.DrawModeButton.W <= layout.UndoButton.X + 0.001);
-        Assert.True(layout.UndoButton.X + layout.UndoButton.W <= layout.MuteButton.X + 0.001);
-        Assert.True(layout.DrawModeButton.X >= 0, $"the draw toggle starts at {layout.DrawModeButton.X:F1}");
+        for (int i = 1; i < row.Length; i++)
+        {
+            Assert.True(
+                row[i - 1].X + row[i - 1].W <= row[i].X + 0.001,
+                $"corner buttons {i - 1} and {i} overlap");
+        }
+
+        Assert.True(row[0].X >= 0, $"the row starts at {row[0].X:F1}, off the left of the board");
     }
 
     [Theory]

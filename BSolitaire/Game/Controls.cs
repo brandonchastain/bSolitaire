@@ -14,6 +14,7 @@ internal enum PlayerCommand
     ToggleStats,
     ToggleDrawMode,
     BackUp,
+    Hint,
     Replay,
     NewGame
 }
@@ -93,6 +94,12 @@ internal sealed class Controls
         {
             pressConsumed = true;
             return PlayerCommand.BackUp;
+        }
+
+        if (layout.HintButton.Contains(x, y))
+        {
+            pressConsumed = true;
+            return PlayerCommand.Hint;
         }
 
         if (layout.DrawModeButton.Contains(x, y))
@@ -175,6 +182,7 @@ internal sealed class Controls
         "KeyZ" or "Backspace" => PlayerCommand.Undo,
         "KeyB" => PlayerCommand.BackUp,
         "KeyP" => PlayerCommand.Replay,
+        "KeyH" => PlayerCommand.Hint,
         "Space" or "Enter" => PlayerCommand.FastForward,
         _ => PlayerCommand.None
     };

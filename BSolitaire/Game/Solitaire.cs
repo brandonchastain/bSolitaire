@@ -19,6 +19,7 @@ internal sealed class Solitaire : ISolitaireView
 {
     private readonly Controls controls;
     private readonly Analyzer analyzer;
+    private readonly Hinter hinter;
     private readonly DealVetter vetter;
     private readonly FastForward fastForward;
     private readonly ScoreKeeper scores;
@@ -40,6 +41,7 @@ internal sealed class Solitaire : ISolitaireView
         Layout = new BoardLayout(800, 600);
         controls = new Controls(Board, Layout);
         analyzer = new Analyzer(Board);
+        hinter = new Hinter(Board);
         vetter = new DealVetter();
         fastForward = new FastForward(Board);
         scores = new ScoreKeeper(Board);
@@ -140,6 +142,12 @@ internal sealed class Solitaire : ISolitaireView
     /// answer to which is a way back, not a dimmed board and a new game. They may also
     /// simply keep playing, and some will.
     /// </summary>
+    /// <summary>How a hint is getting on, if one was asked for.</summary>
+    public HintState Hinting => hinter.State;
+
+    /// <summary>The move to suggest, when there is one the search could vouch for.</summary>
+    public Move? Hint => hinter.Hint;
+
     public bool NoWinningLine =>
         State == GameState.Playing && analyzer.Result == SolveResult.Unwinnable && Drag == null;
 
@@ -289,6 +297,11 @@ internal sealed class Solitaire : ISolitaireView
         // vetting itself. Finding a deal changes nothing on screen, so it never asks for a
         // redraw either.
         vetter.Update(paused: busy || !analyzer.Done);
+
+        if (hinter.Update(paused: busy))
+        {
+            NeedsRedraw = true;
+        }
     }
 
     /// <param name="touch">True for a finger or a pen rather than a mouse.</param>
@@ -578,6 +591,12 @@ internal sealed class Solitaire : ISolitaireView
 
             case PlayerCommand.BackUp:
                 BackUp();
+                break;
+
+            case PlayerCommand.Hint:
+                // The search can only speak for the position in front of it, so a hint is
+                // asked about a still board and withdrawn the moment one changes.
+                hinter.Ask();
                 break;
 
             case PlayerCommand.Replay:
