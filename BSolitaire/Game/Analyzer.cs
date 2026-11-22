@@ -28,6 +28,7 @@ internal sealed class Analyzer
 
     private Solver? solver;
     private int analysedVersion = -1;
+    private int analysedDeal = -1;
 
     public Analyzer(Board board) => this.board = board;
 
@@ -44,6 +45,21 @@ internal sealed class Analyzer
     public bool Done => solver is null || solver.Done;
 
     /// <summary>
+    /// How far back the last position this proved winnable is, as an undo depth, or -1 if
+    /// there is no such position in this deal.
+    ///
+    /// A depth rather than a <see cref="Board.Version"/>, because undo bumps the version
+    /// like any other change — there is no version to go back to. Undo is a pure stack, so
+    /// a depth is an identity: unwind to it and the position is the one that was proved.
+    ///
+    /// Only positions the search actually <em>proved</em> winnable are anchored on. One it
+    /// merely ran out of budget on is not somewhere to send the player back to and call it
+    /// safe, and the solver's standard of proof is the whole reason its answers are worth
+    /// anything.
+    /// </summary>
+    public int WinnableDepth { get; private set; } = -1;
+
+    /// <summary>
     /// Gives the search its slice of one frame, and reports whether the board changed as a
     /// result — the only way it can is a position being proved dead.
     /// </summary>
@@ -56,6 +72,21 @@ internal sealed class Analyzer
     /// </param>
     public bool Update(bool paused)
     {
+        if (analysedDeal != board.DealId)
+        {
+            // A new deal. Whatever was proved about the last one is about cards that are no
+            // longer on the table.
+            analysedDeal = board.DealId;
+            WinnableDepth = -1;
+        }
+
+        if (board.UndoDepth < WinnableDepth)
+        {
+            // The player has gone back past it by hand. Anything they do from here is a
+            // different line, and the old anchor is a position on a line nobody is on.
+            WinnableDepth = -1;
+        }
+
         // A move invalidates whatever the search was working on; start again on the new
         // position. Restarting rather than repairing is the honest thing: a move can turn a
         // lost position into a won one and vice versa.
@@ -70,12 +101,19 @@ internal sealed class Analyzer
             return false;
         }
 
-        if (solver.Step(SearchSlice, SearchBudget) && solver.Result == SolveResult.Unwinnable)
+        if (!solver.Step(SearchSlice, SearchBudget))
         {
-            board.MarkUnwinnable();
-            return true;
+            return false;
         }
 
-        return false;
+        if (solver.Result == SolveResult.Winnable)
+        {
+            // Somewhere to come back to, if the player later plays themselves out of it.
+            WinnableDepth = board.UndoDepth;
+        }
+
+        // A verdict worth drawing: the board itself has not changed, but what the game has
+        // to say about it has.
+        return solver.Result == SolveResult.Unwinnable;
     }
 }

@@ -169,7 +169,76 @@ public class PiecesTests
         // Four cards cannot become fifty-two, so every line from here loses.
         Assert.True(changed);
         Assert.Equal(SolveResult.Unwinnable, analyzer.Result);
-        Assert.Equal(GameState.Unwinnable, board.State);
+
+        // And the board is left alone. The verdict is about the position, not a thing done
+        // to the game: the player can still move, and the deal is not over until the board
+        // says it is.
+        Assert.Equal(GameState.Playing, board.State);
+    }
+
+    [Fact]
+    public void TheSearchRemembersTheLastPositionItCouldStillWin()
+    {
+        // Somewhere to send the player back to, once they have played themselves out of it.
+        // A board four moves from done rather than a fresh deal: most openings the search
+        // runs out of budget on, and an anchor is only ever a position it *proved*.
+        var board = FourKingsFromDone();
+        var analyzer = new Analyzer(board);
+
+        Settle(analyzer);
+
+        Assert.Equal(SolveResult.Winnable, analyzer.Result);
+        Assert.Equal(0, analyzer.WinnableDepth);
+
+        board.FastForwardStep();
+        Settle(analyzer);
+
+        Assert.Equal(1, analyzer.WinnableDepth);
+        Assert.Equal(board.UndoDepth, analyzer.WinnableDepth);
+    }
+
+    [Fact]
+    public void AnAnchorIsNeverAheadOfWhereTheDealHasGotTo()
+    {
+        // Backing up is a loop that undoes until it reaches the anchor. An anchor deeper
+        // than the board has got to is a loop with nothing to stop it.
+        var board = FourKingsFromDone();
+        var analyzer = new Analyzer(board);
+
+        board.FastForwardStep();
+        board.FastForwardStep();
+        Settle(analyzer);
+
+        Assert.Equal(2, analyzer.WinnableDepth);
+
+        board.Undo();
+        board.Undo();
+        Settle(analyzer);
+
+        Assert.True(
+            analyzer.WinnableDepth <= board.UndoDepth,
+            $"the anchor is at {analyzer.WinnableDepth} and the deal is at {board.UndoDepth}");
+    }
+
+    [Fact]
+    public void AFreshDealKeepsNoneOfTheLastOnesAnchor()
+    {
+        var board = FourKingsFromDone();
+        var analyzer = new Analyzer(board);
+
+        board.FastForwardStep();
+        board.FastForwardStep();
+        board.FastForwardStep();
+        Settle(analyzer);
+
+        Assert.Equal(3, analyzer.WinnableDepth);
+
+        board.Reset();
+        analyzer.Update(paused: false);
+
+        // Nobody has moved anything on the new deal, so there is nothing behind the player
+        // to go back to, whatever was true of the last one.
+        Assert.True(analyzer.WinnableDepth <= 0);
     }
 
     // -- ScoreKeeper ------------------------------------------------------------------
@@ -763,6 +832,21 @@ public class PiecesTests
         {
             now += 8;
             scores.Tick(now);
+        }
+    }
+
+    /// <summary>Gives the search frames until it has an answer about the position it is on.
+    /// Keyed on the result and not on Done, which is true before the first frame because
+    /// there is no search yet.</summary>
+    private static void Settle(Analyzer analyzer)
+    {
+        // One frame first, unconditionally: until it runs, the result on offer is still the
+        // last position's, and a loop that reads it would decide it had nothing to do.
+        analyzer.Update(paused: false);
+
+        for (int frame = 0; frame < 2000 && analyzer.Result == SolveResult.Searching; frame++)
+        {
+            analyzer.Update(paused: false);
         }
     }
 

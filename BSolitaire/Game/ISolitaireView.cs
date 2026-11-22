@@ -32,6 +32,10 @@ internal interface ISolitaireView
 
     bool CanFastForward { get; }
 
+    bool NoWinningLine { get; }
+
+    bool CanBackUp { get; }
+
     bool Celebrating { get; }
 
     bool ShowStats { get; }

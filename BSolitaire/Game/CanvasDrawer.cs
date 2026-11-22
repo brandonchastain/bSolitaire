@@ -451,6 +451,10 @@ internal sealed class CanvasDrawer : IGameDrawer
         {
             await DrawFastForward(layout);
         }
+        else if (game.NoWinningLine)
+        {
+            await DrawBackUp(layout, game.CanBackUp);
+        }
 
         // The stack under the pointer, outlined as one unit: a press takes all of it, so
         // highlighting only the card the cursor is literally over would understate the move.
@@ -698,6 +702,35 @@ internal sealed class CanvasDrawer : IGameDrawer
     }
 
     /// <summary>
+    /// What the search has worked out, and the way back out of it. An overlay in the same
+    /// family as the finish offer — and in the same place, which the two can share because
+    /// they can never both stand.
+    ///
+    /// Not a panel, not a dim, and not a verdict on the game: the position cannot be won,
+    /// the player can still play it, and the deal is not over until the board says so. It
+    /// says what was proved and offers the undo that answers it, and nothing else.
+    /// </summary>
+    private async ValueTask DrawBackUp(BoardLayout layout, bool canBackUp)
+    {
+        var button = layout.BackUpButton;
+
+        await RoundedPath(button, button.H * 0.28);
+        await Fill("#12351f");
+        await ctx.FillAsync();
+        await LineWidth(1);
+        await Stroke("#cfe0d2");
+        await ctx.StrokeAsync();
+
+        await Fill(canBackUp ? "#f4f8f4" : "#8fa697");
+        await Font($"{button.H * 0.30:F0}px sans-serif");
+        await Align("center");
+        await ctx.FillTextAsync(
+            canBackUp ? "No winning line from here  ·  Back up \u21a9" : "No winning line from here",
+            button.X + button.W / 2,
+            button.Y + button.H / 2);
+    }
+
+    /// <summary>
     /// The offer to play out a decided game. Drawn over the cached board rather than into it,
     /// because whether it shows depends on the pointer as well as the position.
     /// </summary>
@@ -746,13 +779,13 @@ internal sealed class CanvasDrawer : IGameDrawer
         await Stroke("#e8f0e8");
         await ctx.StrokeAsync();
 
-        // The two ways of losing are different claims and are worth wording differently:
-        // one is "nothing can move", the other is "moves remain but none of them wins".
+        // Only two things reach the banner now. A deal the search has proved cannot be won
+        // is not one of them: the player can still move, so they are told quietly and left
+        // to it, rather than having the board dimmed out from under them.
         (string headline, string detail) = state switch
         {
             GameState.Won => ("You win!", "All 52 cards are home."),
-            GameState.Stuck => ("No moves left", "Nothing on the board can move."),
-            _ => ("This deal is lost", "No line from here wins."),
+            _ => ("No moves left", "Nothing on the board can move."),
         };
 
         await Fill("#e8f0e8");

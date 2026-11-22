@@ -132,6 +132,24 @@ internal sealed class Solitaire : ISolitaireView
     /// </summary>
     public bool CanFastForward => Board.CanFastForward && !fastForward.IsRunning && Drag == null;
 
+    /// <summary>
+    /// Whether the search has proved there is no winning line from here.
+    ///
+    /// It is a thing to tell the player, not a thing to do to them. A deal that was vetted
+    /// before it was dealt and is now unwinnable is one they played themselves out of — the
+    /// answer to which is a way back, not a dimmed board and a new game. They may also
+    /// simply keep playing, and some will.
+    /// </summary>
+    public bool NoWinningLine =>
+        State == GameState.Playing && analyzer.Result == SolveResult.Unwinnable && Drag == null;
+
+    /// <summary>
+    /// Whether there is anywhere to back up to. The offer stands whenever a move can be
+    /// taken back at all: with an anchor it goes to the last position the search proved
+    /// winnable, and without one it is a single step, which is still the way back.
+    /// </summary>
+    public bool CanBackUp => Board.CanUndo;
+
     /// <summary>Whether the draw-time overlay is shown. Toggled with F, and saved with the
     /// score.</summary>
     public bool ShowStats => Score.ShowStats;
@@ -281,7 +299,14 @@ internal sealed class Solitaire : ISolitaireView
         // The panel is pressable exactly when it is painted — which is not simply "the game
         // is over": the celebration holds it back, and a button nobody can see must not take
         // a press meant for the board behind it.
-        Do(controls.Down(x, y, touch, CanFastForward, CanUndo, State != GameState.Playing && !Celebrating));
+        Do(controls.Down(
+            x,
+            y,
+            touch,
+            CanFastForward,
+            NoWinningLine && CanBackUp,
+            CanUndo,
+            State != GameState.Playing && !Celebrating));
     });
 
     public void OnPointerUp(double x, double y) => Guarded(() =>
@@ -364,6 +389,45 @@ internal sealed class Solitaire : ISolitaireView
     {
         WantsDrawChange = false;
         NeedsRedraw = true;
+    }
+
+    /// <summary>
+    /// Takes the deal back to the last position the search proved could still be won, or by
+    /// one move if it never proved one.
+    ///
+    /// Not a new kind of state: it is the undo the player already had, pressed for them as
+    /// many times as it takes. What it does not claim is to have found the mistake — the
+    /// search knows which positions were winnable, not which move stopped them being so.
+    /// </summary>
+    public void BackUp()
+    {
+        if (!Board.CanUndo)
+        {
+            return;
+        }
+
+        Guarded(() =>
+        {
+            // Whatever was in the air was on its way somewhere that is about to stop being
+            // true, the same reason undo clears it.
+            animator.Clear();
+
+            int anchor = analyzer.WinnableDepth;
+
+            if (anchor >= 0 && Board.UndoDepth > anchor)
+            {
+                while (Board.UndoDepth > anchor && Board.Undo())
+                {
+                }
+
+                return;
+            }
+
+            // One step when there is nowhere proven to go back to, which is the honest
+            // degradation: somewhere better is unknown, and somewhere earlier is still a
+            // way back. Also the answer when the player is already standing on the anchor.
+            Board.Undo();
+        });
     }
 
     /// <summary>Abandons the current game and deals a new one.</summary>
@@ -480,6 +544,10 @@ internal sealed class Solitaire : ISolitaireView
                     Board.Undo();
                 }
 
+                break;
+
+            case PlayerCommand.BackUp:
+                BackUp();
                 break;
 
             case PlayerCommand.NewGame:

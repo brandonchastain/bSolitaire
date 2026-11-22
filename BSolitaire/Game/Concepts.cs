@@ -11,14 +11,14 @@ internal enum GameState
     /// <summary>
     /// No legal move remains at all — there is nothing left to drag anywhere. This is about
     /// the position being frozen, not about whether it could ever have been won.
+    ///
+    /// The only way a deal ends badly. A search proving that no line from here wins used to
+    /// be a state too, and ended the deal the moment it landed; it is a verdict about the
+    /// position rather than a fact about the game, the player can still move, and they are
+    /// now told so without the game being taken away from them. The verdict lives where it
+    /// is reached, on <see cref="Analyzer"/>.
     /// </summary>
-    Stuck,
-
-    /// <summary>
-    /// Moves remain, but a search has proved that none of them leads to a finished board.
-    /// Strictly worse news than <see cref="Stuck"/>, and much harder to establish.
-    /// </summary>
-    Unwinnable
+    Stuck
 }
 
 /// <summary>
