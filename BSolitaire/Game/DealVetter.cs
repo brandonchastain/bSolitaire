@@ -26,6 +26,20 @@ namespace BSolitaire.Game;
 /// What the player is promised is "a win exists from here for someone who can see the
 /// face-down cards" — the only question the search can answer. It is not a promise that they
 /// will find it, and a deal can still be lost by playing it badly. That is the game.
+///
+/// Under a draw of three the promise is weaker, and knowingly so. The <see cref="Solver"/>
+/// models the stock as a set rather than a sequence, so it may win using a card the real
+/// deal would never put on top of the waste. The verdict in the stats overlay is marked for
+/// that; the deal still carries a proof, only one made in a game slightly kinder than the
+/// one being played.
+///
+/// How much weaker is not measured, and the reason is worth recording rather than leaving
+/// as an omission. Measuring it means proving kept deals <em>dead</em> under real draw-three
+/// grouping, which needs a draw-aware search this codebase does not have — and deadness is
+/// the expensive half of the asymmetry above: of those sixty openings, not one was proved
+/// unwinnable. So the instrument would cost about what fixing it would, and would mostly
+/// answer "ran out of budget" once built. The honest position is the marked verdict, until
+/// somebody wants the number enough to pay for a draw-aware search and the hours to run it.
 /// </summary>
 internal sealed class DealVetter
 {
@@ -72,6 +86,18 @@ internal sealed class DealVetter
     /// <summary>Candidates thrown away. Nothing depends on it; it is how the tests and the
     /// stats overlay can see the search working.</summary>
     public int Discarded { get; private set; }
+
+    /// <summary>
+    /// Deals handed out that nothing had proved anything about, because the wait ran out
+    /// before a candidate proved itself.
+    ///
+    /// Rare by construction and silent until now, which is the problem with it: if this
+    /// ever moves in real play then the attempt count or the quarter-second ceiling is
+    /// wrong for that machine, and that is worth knowing rather than guessing at. It is an
+    /// instrument, not a score — the player is told nothing, because the deal they were
+    /// given carries no promise to tell them about.
+    /// </summary>
+    public int Unvetted { get; private set; }
 
     /// <summary>
     /// Gives the search its slice of one frame.
@@ -150,6 +176,7 @@ internal sealed class DealVetter
             Discarded++;
         }
 
+        Unvetted++;
         return null;
     }
 
