@@ -29,6 +29,10 @@ internal sealed class Solitaire : ISolitaireView
     /// on screen does not restart it on every frame.</summary>
     private int celebratedDeal = -1;
 
+    /// <summary>The second the clock was last drawn showing, so it asks for a frame when it
+    /// ticks over rather than sixty times in between.</summary>
+    private long shownSeconds = -1;
+
     public Solitaire()
     {
         Board = new Board();
@@ -148,6 +152,9 @@ internal sealed class Solitaire : ISolitaireView
     /// itself, which the drawer already has; this is the one number that is not.</summary>
     public long? LastGameSeconds => scores.LastGameSeconds;
 
+    /// <summary>How long the deal in progress has taken, for the clock on the board.</summary>
+    public long ElapsedSeconds => scores.ElapsedSeconds;
+
     /// <summary>
     /// Noises the board has asked for since the host last drained them. Nothing here makes a
     /// sound; the host plays them and calls <see cref="ClearSounds"/>.
@@ -221,6 +228,18 @@ internal sealed class Solitaire : ISolitaireView
         // The frame's own clock, handed over as it arrived. ScoreKeeper keeps the previous
         // one and takes the difference itself, the same way the animator does.
         scores.Tick(elapsed.TotalMilliseconds);
+
+        // The clock on the board is the one thing here that changes without the board
+        // changing, so it has to ask for its own frame — but only when it has something new
+        // to say. The clock itself stops before the first move, on a finished deal and
+        // while the tab is away, so this asks for nothing in any of those.
+        long seconds = scores.ElapsedSeconds;
+
+        if (seconds != shownSeconds)
+        {
+            shownSeconds = seconds;
+            NeedsRedraw = true;
+        }
 
         if (scores.Update())
         {
@@ -360,7 +379,15 @@ internal sealed class Solitaire : ISolitaireView
         // included, so there is one place to do it.
         Guarded(() => scores.Abandon());
 
-        Guarded(() => Board.Reset(vetter.TakeDeal(), DrawThree ? 3 : 1));
+        Guarded(() =>
+        {
+            Board.Reset(vetter.TakeDeal(), DrawThree ? 3 : 1);
+
+            // What this deal turns over, not what the setting says the next one will:
+            // between a press of the toggle and a new game those are deliberately
+            // different, and the waste has to show the game being played.
+            Layout.SetWasteFan(Board.DrawCount);
+        });
     }
 
     /// <summary>

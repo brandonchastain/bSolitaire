@@ -23,10 +23,6 @@ internal sealed class CanvasDrawer : IGameDrawer
     // reads off a fanned column, and every other size on the card is set around leaving it
     // room. Every number here was checked for clearance rather than eyeballed — the tightest
     // gap between any two marks on any of the fifty-two faces is about 2px at a 110px card.
-    /// <summary>How many of the waste's cards are drawn. Matches the fan the layout lays
-    /// out; the rects themselves still come from the layout.</summary>
-    private const int WasteFanCards = 3;
-
     private const double CornerRadius = 0.075;   // of card width
     private const double IndexAxis = 0.168;       // of card width, in from the near edge
     private const double RankRow = 0.118;        // of card height, in from the near edge
@@ -148,7 +144,6 @@ internal sealed class CanvasDrawer : IGameDrawer
 
     private bool cachedDrawThree;
     private bool cachedCanUndo;
-    private string cachedScore = "";
 
     // ---- The card atlas -------------------------------------------------------------
     //
@@ -324,16 +319,16 @@ internal sealed class CanvasDrawer : IGameDrawer
         // being redrawn every frame — the speaker alone is two dozen strokes and arcs. They
         // go into the cached board with everything else, and are only redrawn when one of
         // them actually says something different.
+        // The score is not here: it moved to the live pass, so it no longer invalidates
+        // the cache and no longer has to be compared. Keep it that way — see DrawChrome.
         bool chromeChanged =
             cachedDrawThree != game.DrawThree ||
             cachedMuted != game.Muted ||
-            cachedCanUndo != game.CanUndo ||
-            cachedScore != game.Score.Summary;
+            cachedCanUndo != game.CanUndo;
 
         cachedDrawThree = game.DrawThree;
         cachedMuted = game.Muted;
         cachedCanUndo = game.CanUndo;
-        cachedScore = game.Score.Summary;
 
         repaint.Clear();
 
@@ -518,10 +513,7 @@ internal sealed class CanvasDrawer : IGameDrawer
             await ctx.FillTextAsync($"Error: {game.Error}", 24, 80);
         }
 
-        if (game.ShowStats)
-        {
-            await DrawStats(layout, game.Analysis, game.AnalysisNodes);
-        }
+        await DrawBottomRow(layout, game);
 
         await ctx.EndBatchAsync();
 
@@ -666,7 +658,7 @@ internal sealed class CanvasDrawer : IGameDrawer
         int firstVisible = location.Kind switch
         {
             PileKind.Tableau => 0,
-            PileKind.FaceUp => Math.Max(0, visibleCount - WasteFanCards),
+            PileKind.FaceUp => Math.Max(0, visibleCount - layout.WasteFanCards),
             _ => visibleCount - 1
         };
 
@@ -803,9 +795,17 @@ internal sealed class CanvasDrawer : IGameDrawer
     /// part of the position. Painted into the cached board, so a frame that is only moving a
     /// card does not repaint a speaker.
     /// </summary>
+    /// <summary>
+    /// The corner controls, painted into the cached board with everything else.
+    ///
+    /// Nothing drawn here may be text that changes on its own. This paints over whatever is
+    /// already in the cache without clearing it first — only a pile's region is ever
+    /// cleared — so a string that changes while the rest of the board does not would be
+    /// laid on top of the one before it. The score line used to be here, and did exactly
+    /// that the first time a player typed a nickname.
+    /// </summary>
     private async ValueTask DrawChrome(BoardLayout layout, ISolitaireView game)
     {
-        await DrawScore(layout, game.Score);
         await DrawMute(layout, game.Muted);
         await DrawDrawMode(layout, game.DrawThree);
 
@@ -871,24 +871,63 @@ internal sealed class CanvasDrawer : IGameDrawer
     }
 
     /// <summary>
-    /// The local player's record, bottom-right, where the board never reaches: the tableau is
-    /// centred and the fast-forward offer sits in the middle. Drawn on the live pass rather
-    /// than the cached board, so it survives the banner dimming the felt behind it.
+    /// Everything along the bottom edge, laid out in one place so that no two of them can
+    /// be given the same pixels.
+    ///
+    /// The clock on the left, the player's record on the right, and the diagnostics overlay
+    /// in whatever is left between them — drawn only when that is enough, which on a phone
+    /// it never is. It used to be drawn regardless, from the same corner the record was
+    /// measured to, and on anything narrower than a laptop the two ran through each other.
+    ///
+    /// All of it on the live pass, over the blit, which repaints this strip from the cache
+    /// every frame. That is what lets the clock change without the board changing, and what
+    /// keeps the record from being painted on top of its previous self — which is what it
+    /// did while it lived in the cached chrome, every time a player typed a nickname.
     /// </summary>
-    private async ValueTask DrawScore(BoardLayout layout, PlayerScore score)
+    private async ValueTask DrawBottomRow(BoardLayout layout, ISolitaireView game)
     {
-        await Fill("#cfe0d2");
+        string onTheClock = game.State == GameState.Playing ? Clock(game.ElapsedSeconds) : "";
+        string score = game.Score.Summary;
+        var row = layout.BottomRowFor(onTheClock.Length, score.Length);
+
+        // The name is the longest part of the line and the part the player already knows,
+        // so it is what goes when the line will not fit. Decided by what fits rather than
+        // by a width: a long enough nickname overruns a window nobody would call narrow.
+        if (row.StatsRoom < 0)
+        {
+            score = game.Score.Tallies;
+            row = layout.BottomRowFor(onTheClock.Length, score.Length);
+        }
+
         await Font("bold 14px monospace");
+        await Fill("#cfe0d2");
         await Align("right");
-        await ctx.FillTextAsync(score.Summary, layout.Width - 8, layout.Height - 14);
+        await ctx.FillTextAsync(score, row.ScoreRightX, row.TextY);
+
+        if (onTheClock.Length > 0)
+        {
+            await Fill("#b9cfbe");
+            await Align("left");
+            await ctx.FillTextAsync(onTheClock, row.ClockX, row.TextY);
+        }
+
+        if (game.ShowStats)
+        {
+            await DrawStats(layout, game, row);
+        }
     }
 
     /// <summary>
-    /// Draw time and draws per second. Draws per second is not frame rate — the host
-    /// skips drawing when nothing changed, so it reads zero on an idle board and only
-    /// means anything while something is moving.
+    /// Draw time and draws per second, and what the search makes of the position. Draws per
+    /// second is not frame rate — the host skips drawing when nothing changed, so on an idle
+    /// board it reads whatever else is asking for frames, which while a deal is being played
+    /// is the clock, once a second.
+    ///
+    /// Drawn only where the band has room for it, which rules out every phone. There is no
+    /// keyboard to press F with on one, and a line running through the player's record would
+    /// be worse than a line that is not there.
     /// </summary>
-    private async ValueTask DrawStats(BoardLayout layout, SolveResult analysis, int nodes)
+    private async ValueTask DrawStats(BoardLayout layout, ISolitaireView game, BottomRow row)
     {
         double now = clock.Elapsed.TotalMilliseconds;
         while (recentDraws.Count > 0 && now - recentDraws.Peek() > 1000)
@@ -898,14 +937,18 @@ internal sealed class CanvasDrawer : IGameDrawer
 
         recentDraws.Enqueue(now);
 
-        // Bottom-left, where nothing else is drawn at any screen size.
+        string line =
+            $"{lastDrawMs,5:F1} ms   {recentDraws.Count,3} draws/s   search {game.Analysis} {game.AnalysisNodes,7:N0}";
+
+        if (line.Length * layout.GlyphWidth > row.StatsRoom)
+        {
+            return;
+        }
+
         await Fill("#e8f0e8");
         await Font("bold 14px monospace");
         await Align("left");
-        await ctx.FillTextAsync(
-            $"{lastDrawMs,5:F1} ms   {recentDraws.Count,3} draws/s   search {analysis} {nodes,7:N0}",
-            8,
-            layout.Height - 14);
+        await ctx.FillTextAsync(line, row.StatsX, row.TextY);
     }
 
     /// <summary>

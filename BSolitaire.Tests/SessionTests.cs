@@ -509,6 +509,81 @@ public class SessionTests
         Assert.Equal(1, game.Score.TotalGameSeconds);
     }
 
+    [Fact]
+    public void TheWasteFanFollowsTheDealAndNotTheSetting()
+    {
+        // Between a press of the toggle and a new game the two deliberately differ, and
+        // the waste has to show the game actually being played.
+        var game = Sized();
+        game.Reset();
+
+        Assert.Equal(3, game.Layout.WasteFanCards);
+
+        game.OnKeyDown("KeyD");
+
+        Assert.Equal(3, game.Layout.WasteFanCards);
+
+        game.ConfirmDrawChange();
+
+        Assert.Equal(1, game.Board.DrawCount);
+        Assert.Equal(1, game.Layout.WasteFanCards);
+    }
+
+    [Fact]
+    public void TheClockAsksForAFrameASecondAndNoneWhenItIsNotRunning()
+    {
+        // It is the one thing on the board that changes without the board changing, so it
+        // has to ask for its own frames — and ask for none when it has nothing to say, or
+        // an idle board would be repainted sixty times a second for a clock that is
+        // standing still.
+        var game = Sized();
+        game.Reset();
+
+        double now = 0;
+        Settle(game, ref now, frames: 400);
+
+        int whileUntouched = FramesAskedFor(game, ref now, frames: 625);
+
+        game.Board.DealFromStock();
+        Settle(game, ref now, frames: 120);
+
+        int whilePlaying = FramesAskedFor(game, ref now, frames: 625);
+
+        Assert.Equal(0, whileUntouched);
+        Assert.InRange(whilePlaying, 4, 6);
+    }
+
+    /// <summary>Runs frames and throws away whatever they asked for.</summary>
+    private static void Settle(Solitaire game, ref double now, int frames)
+    {
+        for (int frame = 0; frame < frames; frame++)
+        {
+            now += 8;
+            game.Update(TimeSpan.FromMilliseconds(now));
+            game.MarkClean();
+        }
+    }
+
+    /// <summary>Runs frames and counts how many of them wanted the board repainted.</summary>
+    private static int FramesAskedFor(Solitaire game, ref double now, int frames)
+    {
+        int asked = 0;
+
+        for (int frame = 0; frame < frames; frame++)
+        {
+            now += 8;
+            game.Update(TimeSpan.FromMilliseconds(now));
+
+            if (game.NeedsRedraw)
+            {
+                asked++;
+                game.MarkClean();
+            }
+        }
+
+        return asked;
+    }
+
     private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
 
     /// <summary>A game sized like a real viewport, so the buttons are where the layout puts

@@ -40,6 +40,8 @@ internal interface ISolitaireView
 
     long? LastGameSeconds { get; }
 
+    long ElapsedSeconds { get; }
+
     bool Muted { get; }
 
     PlayerScore Score { get; }

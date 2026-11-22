@@ -42,6 +42,14 @@ internal sealed class ScoreKeeper
     /// banner says; the averages come off the record itself.</summary>
     public long? LastGameSeconds { get; private set; }
 
+    /// <summary>
+    /// How long the deal in progress has taken so far. Zero until its first move, and it
+    /// stops where <see cref="Tick"/> stops — a finished board, or a tab nobody is looking
+    /// at. Counted down rather than rounded, because a clock that reads one before a second
+    /// has passed is telling the player something that is not true.
+    /// </summary>
+    public long ElapsedSeconds => (long)(elapsedMs / 1000);
+
     /// <summary>Whether this deal has been played at all. A deal nobody has moved a card on
     /// is not a game they lost, so walking away from it records nothing.</summary>
     private bool Started => dealtAtVersion >= 0 && board.Version != dealtAtVersion;
@@ -199,7 +207,9 @@ internal sealed class ScoreKeeper
     /// as minutes and seconds, and nothing is the better for the fractions.</summary>
     private void RecordTime(bool won)
     {
-        long seconds = (long)Math.Round(elapsedMs / 1000.0);
+        // Floored, to agree with the clock on the board: a deal the player watched reach
+        // 2:05 must not be recorded as 2:06.
+        long seconds = (long)(elapsedMs / 1000);
 
         LastGameSeconds = seconds;
         Score.TimedGames++;

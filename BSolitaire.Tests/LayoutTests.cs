@@ -22,6 +22,173 @@ public class LayoutTests
 
     [Theory]
     [MemberData(nameof(Viewports))]
+    public void TheBottomRowGivesEachThingItsOwnZone(double width, double height)
+    {
+        // The clock, the diagnostics line and the player's record all want the same strip.
+        // They used to be given it independently, from opposite corners, and ran through
+        // each other on anything narrower than a laptop.
+        var layout = new BoardLayout(width, height);
+        var row = layout.BottomRowFor(4, 24);
+
+        double clockEnds = row.ClockX + (4 * layout.GlyphWidth);
+        double scoreStarts = row.ScoreRightX - (24 * layout.GlyphWidth);
+
+        Assert.True(row.ClockX >= 0, "the clock starts off the left of the board");
+        Assert.True(row.ScoreRightX <= width, "the record runs off the right of the board");
+        Assert.True(clockEnds <= row.StatsX + 0.001, "the clock runs into the diagnostics");
+        Assert.True(clockEnds <= scoreStarts, "the clock runs into the record");
+
+        if (row.StatsRoom > 0)
+        {
+            Assert.True(
+                row.StatsX + row.StatsRoom <= scoreStarts + 0.001,
+                "the diagnostics run into the record");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void TheBottomTextSitsInsideItsOwnBand(double width, double height)
+    {
+        var layout = new BoardLayout(width, height);
+        var row = layout.BottomRowFor(4, 24);
+
+        Assert.True(row.TextY - 7 >= layout.BottomBand.Y, "the text rides above its band");
+        Assert.True(row.TextY + 7 <= layout.BottomBand.Y + layout.BottomBand.H + 0.001);
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void TheCornerRowSitsOnTopOfTheTextBand(double width, double height)
+    {
+        var layout = new BoardLayout(width, height);
+
+        foreach (var button in new[] { layout.MuteButton, layout.UndoButton, layout.DrawModeButton })
+        {
+            Assert.True(
+                button.Y + button.H <= layout.BottomBand.Y + 0.001,
+                $"a corner button reaches {button.Y + button.H:F1} into a band starting at {layout.BottomBand.Y:F1}");
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void TheFinishOfferClearsTheTextAndTheCornerButtons(double width, double height)
+    {
+        // It was painted straight across the bottom text on a phone, and across the corner
+        // of the draw-mode button as well — and Controls.Down tests this rect first, so
+        // that corner of the toggle could not be pressed while the offer stood.
+        var layout = new BoardLayout(width, height);
+        var finish = layout.FastForwardButton;
+
+        Assert.True(
+            finish.Y + finish.H <= layout.BottomBand.Y + 0.001,
+            $"the finish offer reaches {finish.Y + finish.H:F1} into a band starting at {layout.BottomBand.Y:F1}");
+
+        foreach (var button in new[] { layout.MuteButton, layout.UndoButton, layout.DrawModeButton })
+        {
+            bool overlaps = finish.X < button.X + button.W &&
+                            button.X < finish.X + finish.W &&
+                            finish.Y < button.Y + button.H &&
+                            button.Y < finish.Y + finish.H;
+
+            Assert.False(overlaps, "the finish offer covers a corner button");
+        }
+    }
+
+    [Fact]
+    public void APhoneHasNoRoomForTheDiagnosticsAndADesktopDoes()
+    {
+        // Stated as a fact so that nobody later "fixes" a line that is missing on purpose.
+        // The overlay is a developer's switch and a phone has no key to press it with.
+        foreach (var (width, height) in new[] { (320.0, 480.0), (390.0, 844.0) })
+        {
+            var phone = new BoardLayout(width, height);
+            Assert.True(
+                phone.BottomRowFor(4, 24).StatsRoom < 40 * phone.GlyphWidth,
+                $"{width}x{height} was given room the diagnostics could use");
+        }
+
+        var desktop = new BoardLayout(1280, 800);
+        Assert.True(desktop.BottomRowFor(4, 27).StatsRoom >= 56 * desktop.GlyphWidth);
+    }
+
+    [Fact]
+    public void ANewLayoutFansThree()
+    {
+        // The default the waste theories are written against.
+        Assert.Equal(3, new BoardLayout(1200, 800).WasteFanCards);
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void ADrawOneWasteStacksInOneSlot(double width, double height)
+    {
+        // Three cards that arrived one at a time never came over together, so fanning them
+        // says something about the deal that is not true.
+        var layout = new BoardLayout(width, height);
+        layout.SetWasteFan(1);
+
+        var slot = layout.EmptySlot(Waste);
+
+        for (int index = 0; index < 5; index++)
+        {
+            Assert.Equal(slot.X, layout.CardRect(Waste, index, 5).X, 3);
+        }
+
+        Assert.Equal(0, layout.WasteFanOffset, 3);
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void ADrawOneWasteCardIsFoundWhereItIsDrawn(double width, double height)
+    {
+        var board = Empty();
+        var layout = new BoardLayout(width, height);
+        layout.SetWasteFan(1);
+
+        board.Position.Place(Waste, Up(Suit.Hearts, Rank.Two));
+        board.Position.Place(Waste, Up(Suit.Spades, Rank.Three));
+        board.Position.Place(Waste, Up(Suit.Clubs, Rank.Four));
+
+        var top = layout.CardRect(Waste, 2, 3);
+
+        Assert.True(layout.TryHitTest(
+            board.Position, top.X + top.W / 2, top.Y + top.H / 2, out var loc, out int index));
+
+        Assert.Equal(Waste, loc);
+        Assert.Equal(2, index);
+    }
+
+    [Fact]
+    public void TheFanIsClampedToWhatTheBoardCanShow()
+    {
+        var layout = new BoardLayout(1200, 800);
+
+        layout.SetWasteFan(5);
+        Assert.Equal(3, layout.WasteFanCards);
+
+        // A fan of one place has no offset, and working one out would divide by zero.
+        layout.SetWasteFan(0);
+        Assert.Equal(1, layout.WasteFanCards);
+        Assert.True(double.IsFinite(layout.WasteFanOffset));
+        Assert.Equal(0, layout.WasteFanOffset, 3);
+    }
+
+    [Fact]
+    public void TheFanSurvivesAResize()
+    {
+        var layout = new BoardLayout(1200, 800);
+        layout.SetWasteFan(1);
+
+        layout.Resize(390, 844);
+
+        Assert.Equal(1, layout.WasteFanCards);
+        Assert.Equal(layout.EmptySlot(Waste).X, layout.CardRect(Waste, 2, 3).X, 3);
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
     public void TheWasteFansItsLastThreeCards(double width, double height)
     {
         var layout = new BoardLayout(width, height);

@@ -445,3 +445,88 @@ keeps its own rules, so this starts a new game" — and deals on confirmation. T
 deal is counted as played and not won, like any other. A DOM overlay rather than a canvas
 panel, for the same reason the nickname prompt is one: buttons that a keyboard can reach
 have to be real markup.
+
+---
+
+## Fixes after release, second round (#29)
+
+Three things reported from play, and a fourth found while planning them.
+
+### The clock, bottom-left
+
+#26 timed every deal but only showed the result once it ended. The running time is now on
+the board while a deal is being played.
+
+It is drawn on the **live pass**, not into the cached chrome, and that is not a detail. The
+live pass begins with a full-canvas blit of the cache, so anything drawn after it is wiped
+and repainted every frame by construction. `DrawChrome` has no such property, which is the
+subject of the next section. The clock asks for its own frame when the second it is showing
+changes — at most one a second, and none before the first move, on a finished deal, or
+while the tab is away, because the clock itself stops in all three cases.
+
+`ScoreKeeper.RecordTime` now floors rather than rounds, so the last number the player sees
+on the board is the number the banner then shows them.
+
+### The score line was painting over itself
+
+Found while planning, not reported. `AllDirty` is set only by `Board.Undo` and
+`Board.Reset`; an ordinary move patches the cache instead. The score line lived in
+`DrawChrome`, and **`DrawChrome` does not clear behind itself** — only a pile's region is
+ever cleared. So a tally that changed without the whole board changing was painted on top
+of its previous self.
+
+`SetNickname` was the guaranteed case: it changes the line with no board change at all, so
+the first nickname a player typed was drawn over "Player" every time, with the banner's dim
+behind it letting the mush show through.
+
+The score line moved to the live pass with the clock, which fixes it, and `cachedScore`
+left the chrome comparison with it. The rule is now written on `DrawChrome`: nothing drawn
+there may be text that changes on its own.
+
+### The bottom row has zones
+
+The score line and the `F` diagnostics overlay were both centred on `Height - 14` in the
+same font and measured from opposite corners, so they grew toward each other and met below
+about 650px wide. At 320px the diagnostics line alone was wider than the screen.
+
+`BoardLayout.BottomRowFor(clockChars, scoreChars)` now works out where all three go at
+once, and the drawer and the tests both ask it — the lesson of #28 applied to text instead
+of rects. The clock is leftmost so it never moves when `F` is toggled or a tally gains a
+digit; the diagnostics line gets what is left between the clock and the record and is drawn
+only when that is enough. On a phone it never is, so it is not drawn: there is no keyboard
+to press `F` with, and a line running through the player's record is worse than no line.
+
+Arithmetic over a monospace advance rather than measurement. `MeasureTextAsync` exists but
+is not free — a value-returning call inside an open batch forces the round trip
+`BeginBatchAsync` is there to avoid, three times a frame.
+
+The nickname drops out of the record when the line will not fit, decided **by fit rather
+than by a width**: a long enough nickname overruns a window nobody would call narrow, and a
+breakpoint would not have guaranteed the thing the change exists to guarantee.
+
+### The finish offer was drawn across all of it
+
+Pre-existing, and unreported. At 320×480 and 390×844 the "Finish ▶▶" button was painted
+straight across the bottom text, because its clearance was two gutters and a gutter
+collapses to about two pixels on a compact board. At 320×480 it also covered a corner of
+the draw-mode button — and `Controls.Down` tests the finish rect first, so that corner of
+the toggle could not be pressed while the offer stood.
+
+It now clears the text band whatever the gutter has collapsed to, and lifts above the
+corner row when a centred offer reaches it. The three roomy viewports are unchanged to the
+pixel. The test that pins this fails at exactly those two sizes against the old geometry.
+
+### The waste fans what the deal turns over
+
+`WasteFanCards` was a constant — declared twice, in two files that had to agree — so a
+draw-one game fanned the last three cards of its waste from the third turn onward. Those
+three never arrived together and the fan said something about the deal that was not true.
+
+It is now state on `BoardLayout`, set from `Board.DrawCount` at deal time, and the
+duplicate constant is gone. A property rather than another `CardRect` parameter, for two
+reasons: a defaulted parameter is exactly what shipped #28's bug, and `TryHitTest` takes
+only a `Position` and could never have supplied one — so drawing and hit-testing would have
+been guaranteed to disagree. A field they both read cannot.
+
+Read from `Board.DrawCount` and not from the setting: between a press of the toggle and a
+new game those deliberately differ.
