@@ -83,6 +83,14 @@ internal class Board
     public bool CanUndo => history.Count > 0 && State != GameState.Won;
 
     /// <summary>
+    /// How many moves back the player could go. Undo is a pure stack — every move pushes a
+    /// snapshot and every undo pops one — so this is also an identity for the position: undo
+    /// to a given depth and you are exactly where that depth was. <see cref="Version"/> is
+    /// not, because it counts changes and an undo is a change like any other.
+    /// </summary>
+    public int UndoDepth => history.Count;
+
+    /// <summary>
     /// Whether the rest of the game is a formality. Once no tableau card is face down there
     /// is nothing left to discover: every remaining card is either on a tableau top or in the
     /// stock, which recycles without limit, so all of them can be reached.
@@ -117,16 +125,6 @@ internal class Board
     /// redrawn once more when the flight ends and the card belongs there again.
     /// </summary>
     public void Touch(Location loc) => MarkDirty(loc);
-
-    /// <summary>Records that a search proved this position cannot be won. Only the search can
-    /// know this, so it is told to the board rather than worked out by it.</summary>
-    public void MarkUnwinnable()
-    {
-        if (State == GameState.Playing)
-        {
-            State = GameState.Unwinnable;
-        }
-    }
 
     /// <summary>Puts the board back the way it was before the last move. False when there is
     /// nothing to go back to.</summary>

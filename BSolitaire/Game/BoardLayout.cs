@@ -168,6 +168,10 @@ internal sealed class BoardLayout
     /// <summary>The button inside <see cref="Banner"/> that deals a new game.</summary>
     public Rect NewGameButton { get; private set; }
 
+    /// <summary>The offer of a way back, shown when the search has proved there is no
+    /// winning line left. Shares the finish offer's slot — see Resize.</summary>
+    public Rect BackUpButton { get; private set; }
+
     /// <summary>The corner toggle between turning one card off the stock and turning three.
     /// Third in the bottom-right row, left of the undo.</summary>
     public Rect DrawModeButton { get; private set; }
@@ -310,6 +314,15 @@ internal sealed class BoardLayout
         }
 
         FastForwardButton = new Rect(ffX, ffY, ffW, ffH);
+
+        // The same slot as the finish offer. In a real deal the two never both stand — the
+        // finish is offered only when no tableau card is face down, and with all fifty-two
+        // cards in play such a position can always be played out, so it is not one the
+        // search can prove lost. That argument needs the whole deck, though, and a position
+        // arranged by hand can satisfy both; the drawer settles it by preferring the finish,
+        // which is the better news. Wider than the finish, because it carries a sentence.
+        double backW = Math.Min(width - 2 * gutter, CardWidth * 4.4);
+        BackUpButton = new Rect((width - backW) / 2, ffY, backW, ffH);
     }
 
     /// <param name="pileCount">

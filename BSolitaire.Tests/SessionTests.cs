@@ -554,6 +554,100 @@ public class SessionTests
     }
 
     /// <summary>Runs frames and throws away whatever they asked for.</summary>
+    [Fact]
+    public void ALostLineIsSaidQuietlyAndLeavesTheDealAlone()
+    {
+        // The deal was vetted before it was dealt, so a position the search can prove
+        // unwinnable is one the player played themselves into. Dimming the board and
+        // offering them a new game treats that as the game's verdict on them; it is a
+        // thing to be told, with a way back.
+        var game = Sized();
+        game.Board.Position.Strip();
+        game.Board.Position.Place(Tableau(0), Up(Suit.Spades, Rank.King));
+        game.Board.Position.Place(Tableau(1), Up(Suit.Hearts, Rank.Queen));
+        game.Board.Position.Place(Stock, Down(Suit.Diamonds, Rank.Ace));
+        game.Board.Settle();
+        game.Board.DealFromStock();
+
+        for (int frame = 0; frame < 3000 && !game.NoWinningLine; frame++)
+        {
+            game.Update(TimeSpan.FromMilliseconds(frame * 16));
+        }
+
+        Assert.True(game.NoWinningLine, "the search never got to a verdict");
+
+        // No banner, because the deal is not over: three cards cannot become fifty-two,
+        // but the player can still move them.
+        Assert.Equal(GameState.Playing, game.State);
+        Assert.True(game.CanBackUp);
+
+        // And it is not counted. A deal nobody has finished or walked away from is a deal
+        // still being played.
+        Assert.Equal(0, game.Score.Games);
+    }
+
+    [Fact]
+    public void BackingUpWithNowhereProvenToGoTakesOneMove()
+    {
+        // Every position in this deal is lost, so the search never proves one winnable and
+        // there is no anchor. A step back is still a way back, and it is all that can be
+        // honestly offered.
+        var game = Sized();
+        game.Board.Position.Strip();
+        game.Board.Position.Place(Tableau(0), Up(Suit.Spades, Rank.King));
+        game.Board.Position.Place(Tableau(1), Up(Suit.Hearts, Rank.Queen));
+        game.Board.Position.Place(Stock, Down(Suit.Diamonds, Rank.Ace));
+        game.Board.Settle();
+
+        game.Board.DealFromStock();
+        game.Board.MakeMove(new Move(Tableau(1), Tableau(0), 1));
+
+        int before = game.Board.UndoDepth;
+
+        game.OnKeyDown("KeyB");
+
+        Assert.Equal(before - 1, game.Board.UndoDepth);
+    }
+
+    [Fact]
+    public void BackingUpGoesToThePositionTheSearchProvedWinnable()
+    {
+        // Four kings from home: every position here is winnable, so the anchor keeps pace
+        // with the board and backing up has nowhere earlier to go. What is being pinned is
+        // that it stops at the anchor rather than unwinding the whole deal.
+        var game = Sized();
+        LoadFourKings(game);
+
+        for (int frame = 0; frame < 2000; frame++)
+        {
+            game.Update(TimeSpan.FromMilliseconds(frame * 16));
+        }
+
+        int depth = game.Board.UndoDepth;
+
+        game.OnKeyDown("KeyB");
+
+        Assert.True(
+            game.Board.UndoDepth >= depth - 1,
+            $"backing up unwound from {depth} to {game.Board.UndoDepth}");
+    }
+
+    [Fact]
+    public void AStuckDealStillRaisesTheBanner()
+    {
+        // The banner is reserved for the position where there is genuinely nothing to do,
+        // which is when the good games show theirs.
+        var game = Sized();
+        game.Board.Position.Strip();
+        game.Board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        game.Board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.King));
+        game.Board.Position.Place(Tableau(2), Up(Suit.Hearts, Rank.Queen));
+        game.Board.MakeMove(new Move(Tableau(2), Tableau(1), 1));
+
+        Assert.Equal(GameState.Stuck, game.Board.State);
+        Assert.False(game.NoWinningLine);
+    }
+
     private static void Settle(Solitaire game, ref double now, int frames)
     {
         for (int frame = 0; frame < frames; frame++)

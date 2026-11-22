@@ -13,6 +13,7 @@ internal enum PlayerCommand
     ToggleMute,
     ToggleStats,
     ToggleDrawMode,
+    BackUp,
     NewGame
 }
 
@@ -59,7 +60,14 @@ internal sealed class Controls
     /// </param>
     /// <param name="undoOffered">Whether there is a move to take back, and so whether the
     /// undo button is on screen at all. Same rule as above.</param>
-    public PlayerCommand Down(double x, double y, bool touch, bool fastForwardOffered, bool undoOffered, bool bannerShown)
+    public PlayerCommand Down(
+        double x,
+        double y,
+        bool touch,
+        bool fastForwardOffered,
+        bool backUpOffered,
+        bool undoOffered,
+        bool bannerShown)
     {
         // The buttons sit over the felt, so they have to take the press before the piles do.
         // The release that follows has to be swallowed too: PointerInput never saw the press,
@@ -79,6 +87,12 @@ internal sealed class Controls
 
         // The mute toggle sits in the gap column, where no pile ever is, so it only has to
         // take the press ahead of the felt. Same swallowed release as the button above.
+        if (backUpOffered && layout.BackUpButton.Contains(x, y))
+        {
+            pressConsumed = true;
+            return PlayerCommand.BackUp;
+        }
+
         if (layout.DrawModeButton.Contains(x, y))
         {
             pressConsumed = true;
@@ -145,6 +159,7 @@ internal sealed class Controls
         "KeyM" => PlayerCommand.ToggleMute,
         "KeyD" => PlayerCommand.ToggleDrawMode,
         "KeyZ" or "Backspace" => PlayerCommand.Undo,
+        "KeyB" => PlayerCommand.BackUp,
         "Space" or "Enter" => PlayerCommand.FastForward,
         _ => PlayerCommand.None
     };
