@@ -506,7 +506,7 @@ internal sealed class CanvasDrawer : IGameDrawer
             // The panel dims the whole board, cached controls and all, so they are drawn
             // again on top of it — turning the fanfare off is exactly what a player wants to
             // do at the moment a game ends.
-            await DrawBanner(layout, game.State, game.LastGameSeconds, game.Score);
+            await DrawBanner(layout, game);
             await DrawChrome(layout, game);
         }
 
@@ -759,14 +759,12 @@ internal sealed class CanvasDrawer : IGameDrawer
     /// from the layout, which is also what the hit test reads, so the button can't drift away
     /// from the thing you click.
     /// </summary>
-    private async ValueTask DrawBanner(
-        BoardLayout layout,
-        GameState state,
-        long? lastGameSeconds,
-        PlayerScore score)
+    private async ValueTask DrawBanner(BoardLayout layout, ISolitaireView game)
     {
         var panel = layout.Banner;
-        var button = layout.NewGameButton;
+        var state = game.State;
+        long? lastGameSeconds = game.LastGameSeconds;
+        var score = game.Score;
 
         // Dim the board so the panel reads as being in front of it rather than part of it.
         await Fill("rgba(0, 0, 0, 0.45)");
@@ -782,10 +780,14 @@ internal sealed class CanvasDrawer : IGameDrawer
         // Only two things reach the banner now. A deal the search has proved cannot be won
         // is not one of them: the player can still move, so they are told quietly and left
         // to it, rather than having the board dimmed out from under them.
+        // A lost deal is not one of the two. The player can still move, so they are told
+        // quietly and left to it rather than having the board dimmed out from under them.
+        // What is left is a deal that is won and a deal that is frozen — and a frozen one
+        // is somewhere to come back from, not only somewhere to leave.
         (string headline, string detail) = state switch
         {
             GameState.Won => ("You win!", "All 52 cards are home."),
-            _ => ("No moves left", "Nothing on the board can move."),
+            _ => ("No moves left", "Back up and try another way, or play this deal again."),
         };
 
         await Fill("#e8f0e8");
@@ -809,18 +811,30 @@ internal sealed class CanvasDrawer : IGameDrawer
                 panel.Y + panel.H * 0.52);
         }
 
+        // Three ways out, in the order a player would want them: back to where it could
+        // still be won, the same deal again, or a different one. Back up is dimmed rather
+        // than removed when there is nothing to go back to — a panel whose buttons move
+        // about is one you have to read before you can press.
+        await DrawBannerButton(layout.BackUpBannerButton, "Back up", game.CanBackUp, primary: false);
+        await DrawBannerButton(layout.ReplayBannerButton, "Replay", true, primary: false);
+        await DrawBannerButton(layout.NewGameButton, "New game", true, primary: true);
+    }
+
+    /// <summary>One of the banner's actions. Dimmed rather than hidden when it is not
+    /// available, so the three always sit where the player last saw them.</summary>
+    private async ValueTask DrawBannerButton(Rect button, string label, bool enabled, bool primary)
+    {
         await RoundedPath(button, button.H * 0.28);
-        await Fill("#0b6b3a");
+        await Fill(primary ? "#0b6b3a" : "#12351f");
         await ctx.FillAsync();
-        await Stroke("#e8f0e8");
+        await LineWidth(1);
+        await Stroke(enabled ? "#e8f0e8" : "#6f8a78");
         await ctx.StrokeAsync();
 
-        await Fill("#ffffff");
-        await Font($"bold {button.H * 0.42:F0}px sans-serif");
-        await ctx.FillTextAsync(
-            "New Game",
-            button.X + button.W / 2,
-            button.Y + button.H / 2);
+        await Fill(enabled ? "#ffffff" : "#8fa697");
+        await Font($"bold {button.H * 0.34:F0}px sans-serif");
+        await Align("center");
+        await ctx.FillTextAsync(label, button.X + button.W / 2, button.Y + button.H / 2);
     }
 
     /// <summary>

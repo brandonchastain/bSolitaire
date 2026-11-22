@@ -14,6 +14,7 @@ internal enum PlayerCommand
     ToggleStats,
     ToggleDrawMode,
     BackUp,
+    Replay,
     NewGame
 }
 
@@ -65,7 +66,8 @@ internal sealed class Controls
         double y,
         bool touch,
         bool fastForwardOffered,
-        bool backUpOffered,
+        bool noticeOffered,
+        bool canBackUp,
         bool undoOffered,
         bool bannerShown)
     {
@@ -87,7 +89,7 @@ internal sealed class Controls
 
         // The mute toggle sits in the gap column, where no pile ever is, so it only has to
         // take the press ahead of the felt. Same swallowed release as the button above.
-        if (backUpOffered && layout.BackUpButton.Contains(x, y))
+        if (noticeOffered && layout.BackUpButton.Contains(x, y))
         {
             pressConsumed = true;
             return PlayerCommand.BackUp;
@@ -109,6 +111,18 @@ internal sealed class Controls
         // after those and before the felt. Asking for a new game here rather than dealing one
         // is the point: it goes through the same command as the R key, so a deal started from
         // the panel puts the animator and the fast-forward away exactly as that one does.
+        if (bannerShown && canBackUp && layout.BackUpBannerButton.Contains(x, y))
+        {
+            pressConsumed = true;
+            return PlayerCommand.BackUp;
+        }
+
+        if (bannerShown && layout.ReplayBannerButton.Contains(x, y))
+        {
+            pressConsumed = true;
+            return PlayerCommand.Replay;
+        }
+
         if (bannerShown && layout.NewGameButton.Contains(x, y))
         {
             pressConsumed = true;
@@ -160,6 +174,7 @@ internal sealed class Controls
         "KeyD" => PlayerCommand.ToggleDrawMode,
         "KeyZ" or "Backspace" => PlayerCommand.Undo,
         "KeyB" => PlayerCommand.BackUp,
+        "KeyP" => PlayerCommand.Replay,
         "Space" or "Enter" => PlayerCommand.FastForward,
         _ => PlayerCommand.None
     };

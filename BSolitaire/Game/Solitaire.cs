@@ -305,6 +305,7 @@ internal sealed class Solitaire : ISolitaireView
             touch,
             CanFastForward,
             NoWinningLine && CanBackUp,
+            CanBackUp,
             CanUndo,
             State != GameState.Playing && !Celebrating));
     });
@@ -430,6 +431,28 @@ internal sealed class Solitaire : ISolitaireView
         });
     }
 
+    /// <summary>
+    /// Deals this same deal again, from the start.
+    ///
+    /// A second attempt at the same puzzle, not a new one: the order is kept on the board
+    /// and the same order always deals the same position. The attempt being given up is
+    /// counted the way any abandoned deal is — played, not won, with the time it took — and
+    /// the replay is a new deal with its own clock, because that is what it is.
+    ///
+    /// It does not touch the vetter. The deal in hand was vetted once, before it was first
+    /// dealt, and the one the vetter has prepared is still waiting for whenever the player
+    /// actually asks for a new game.
+    /// </summary>
+    public void Replay()
+    {
+        fastForward.Stop();
+        cascade.Stop();
+        animator.Clear();
+
+        Guarded(() => scores.Abandon());
+        Guarded(() => Board.Reset(Board.Deal, Board.DrawCount));
+    }
+
     /// <summary>Abandons the current game and deals a new one.</summary>
     public void Reset()
     {
@@ -548,6 +571,10 @@ internal sealed class Solitaire : ISolitaireView
 
             case PlayerCommand.BackUp:
                 BackUp();
+                break;
+
+            case PlayerCommand.Replay:
+                Replay();
                 break;
 
             case PlayerCommand.NewGame:

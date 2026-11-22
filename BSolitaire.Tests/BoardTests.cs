@@ -406,6 +406,36 @@ public class BoardTests
         Assert.NotSame(first.Position.TableauPiles[0][0], second.Position.TableauPiles[0][0]);
     }
 
+    [Fact]
+    public void ABoardKnowsWhichDealItIsPlaying()
+    {
+        // What makes a second attempt the same puzzle rather than a new one.
+        var board = new Board();
+        var first = Spell(board);
+
+        Assert.Equal(52, board.Deal.Count);
+
+        board.Reset(board.Deal);
+
+        Assert.Equal(first, Spell(board));
+    }
+
+    [Fact]
+    public void ADealDealtWithoutOneStillKnowsWhatItDealt()
+    {
+        // The shuffle happens inside the board now, not out of reach in the dealer.
+        var board = new Board();
+        board.Reset();
+
+        var dealt = board.Deal;
+        Assert.Equal(52, dealt.Count);
+
+        var same = new Board();
+        same.Reset(dealt);
+
+        Assert.Equal(Spell(board), Spell(same));
+    }
+
     /// <summary>A whole position as one string, so two of them can be compared at a glance —
     /// every pile in order, every card's suit, rank, and which way up it is.</summary>
     private static string Spell(Board board)
