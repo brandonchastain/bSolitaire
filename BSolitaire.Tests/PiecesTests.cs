@@ -747,6 +747,135 @@ public class PiecesTests
         Assert.Equal(onTheBoard, scores.Score.TotalGameSeconds);
     }
 
+    // -- Hinter -----------------------------------------------------------------------
+
+    [Fact]
+    public void AHintNamesAMoveTheSearchCanVouchFor()
+    {
+        // Four kings from home: every one of them going home keeps the deal winnable, so
+        // the first candidate tried is certifiable and the hint is a foundation move.
+        var board = FourKingsFromDone();
+        var hinter = new Hinter(board);
+
+        hinter.Ask();
+
+        for (int frame = 0; frame < 2000 && hinter.State == HintState.Looking; frame++)
+        {
+            hinter.Update(paused: false);
+        }
+
+        Assert.Equal(HintState.Found, hinter.State);
+        Assert.NotNull(hinter.Hint);
+        Assert.Equal(PileKind.Foundation, hinter.Hint!.Value.To.Kind);
+
+        // And it is a move the board will actually take.
+        Assert.True(Rules.IsLegal(board.Position, hinter.Hint.Value));
+    }
+
+    [Fact]
+    public void ALostPositionGetsNoHint()
+    {
+        // Nothing here can be vouched for, because nothing here wins. The answer is that
+        // none could be certified — which is a different sentence from "there is no move",
+        // and the one the game is allowed to say.
+        var board = Empty();
+        board.Position.Place(Tableau(0), Up(Suit.Spades, Rank.King));
+        board.Position.Place(Tableau(1), Up(Suit.Hearts, Rank.Queen));
+        board.Settle();
+
+        var hinter = new Hinter(board);
+        hinter.Ask();
+
+        for (int frame = 0; frame < 4000 && hinter.State == HintState.Looking; frame++)
+        {
+            hinter.Update(paused: false);
+        }
+
+        Assert.Equal(HintState.NoneCertain, hinter.State);
+        Assert.Null(hinter.Hint);
+    }
+
+    [Fact]
+    public void AHintIsForgottenOnceTheBoardMoves()
+    {
+        var board = FourKingsFromDone();
+        var hinter = new Hinter(board);
+
+        hinter.Ask();
+
+        for (int frame = 0; frame < 2000 && hinter.State == HintState.Looking; frame++)
+        {
+            hinter.Update(paused: false);
+        }
+
+        Assert.Equal(HintState.Found, hinter.State);
+
+        board.FastForwardStep();
+        hinter.Update(paused: false);
+
+        Assert.Equal(HintState.Idle, hinter.State);
+        Assert.Null(hinter.Hint);
+    }
+
+    [Fact]
+    public void AHintWaitsWhileTheBoardIsBusy()
+    {
+        var board = FourKingsFromDone();
+        var hinter = new Hinter(board);
+
+        hinter.Ask();
+
+        for (int frame = 0; frame < 200; frame++)
+        {
+            hinter.Update(paused: true);
+        }
+
+        Assert.Equal(HintState.Looking, hinter.State);
+        Assert.Null(hinter.Hint);
+    }
+
+    [Fact]
+    public void AskingTwicePutsTheHintAway()
+    {
+        var board = FourKingsFromDone();
+        var hinter = new Hinter(board);
+
+        hinter.Ask();
+
+        for (int frame = 0; frame < 2000 && hinter.State == HintState.Looking; frame++)
+        {
+            hinter.Update(paused: false);
+        }
+
+        Assert.Equal(HintState.Found, hinter.State);
+
+        hinter.Ask();
+
+        Assert.Equal(HintState.Idle, hinter.State);
+        Assert.Null(hinter.Hint);
+    }
+
+    [Fact]
+    public void LookingForAHintLeavesTheRealBoardAlone()
+    {
+        // Candidates are played on a board of its own. If they were played on this one the
+        // player would watch the cards move while they waited for advice about them.
+        var board = FourKingsFromDone();
+        var hinter = new Hinter(board);
+        int version = board.Version;
+        var before = board.Position.FoundationPiles.Select(pile => pile.Count).ToArray();
+
+        hinter.Ask();
+
+        for (int frame = 0; frame < 2000 && hinter.State == HintState.Looking; frame++)
+        {
+            hinter.Update(paused: false);
+        }
+
+        Assert.Equal(version, board.Version);
+        Assert.Equal(before, board.Position.FoundationPiles.Select(pile => pile.Count).ToArray());
+    }
+
     // -- DealVetter -------------------------------------------------------------------
 
     [Fact]

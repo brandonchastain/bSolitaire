@@ -143,6 +143,8 @@ internal sealed class CanvasDrawer : IGameDrawer
     private bool cachedMuted;
 
     private bool cachedDrawThree;
+
+    private HintState cachedHinting;
     private bool cachedCanUndo;
 
     // ---- The card atlas -------------------------------------------------------------
@@ -322,10 +324,12 @@ internal sealed class CanvasDrawer : IGameDrawer
         // The score is not here: it moved to the live pass, so it no longer invalidates
         // the cache and no longer has to be compared. Keep it that way — see DrawChrome.
         bool chromeChanged =
+            cachedHinting != game.Hinting ||
             cachedDrawThree != game.DrawThree ||
             cachedMuted != game.Muted ||
             cachedCanUndo != game.CanUndo;
 
+        cachedHinting = game.Hinting;
         cachedDrawThree = game.DrawThree;
         cachedMuted = game.Muted;
         cachedCanUndo = game.CanUndo;
@@ -454,6 +458,16 @@ internal sealed class CanvasDrawer : IGameDrawer
         else if (game.NoWinningLine)
         {
             await DrawBackUp(layout, game.CanBackUp);
+        }
+
+        if (game.Hint is { } hint)
+        {
+            // The card to pick up and the place to put it, in the same gold the hover and
+            // the drop rings use: it is the same statement, made by the game rather than
+            // by the pointer.
+            var from = board.Position.Pile(hint.From);
+            await DrawHover(board, layout, hint.From, from.Count - hint.Count);
+            await DrawDropTarget(board, layout, hint.To);
         }
 
         // The stack under the pointer, outlined as one unit: a press takes all of it, so
@@ -693,6 +707,30 @@ internal sealed class CanvasDrawer : IGameDrawer
     }
 
     /// <summary>
+    /// The button that asks for a move. Lit while a hint is on the board, so the same press
+    /// that asked for it puts it away, and dimmed when the last answer was that nothing
+    /// could be vouched for.
+    /// </summary>
+    private async ValueTask DrawHintButton(BoardLayout layout, HintState state)
+    {
+        var button = layout.HintButton;
+        double size = button.W;
+        bool lit = state == HintState.Found;
+
+        await RoundedPath(button, size * 0.22);
+        await Fill(lit ? "#0b6b3a" : "#12351f");
+        await ctx.FillAsync();
+        await LineWidth(1);
+        await Stroke(state == HintState.NoneCertain ? "#6f8a78" : "#cfe0d2");
+        await ctx.StrokeAsync();
+
+        await Fill(state == HintState.NoneCertain ? "#8fa697" : "#f4f8f4");
+        await Font($"bold {size * 0.52:F0}px sans-serif");
+        await Align("center");
+        await ctx.FillTextAsync("?", button.X + size / 2, button.Y + size / 2);
+    }
+
+    /// <summary>
     /// How many cards the stock turns over, as a figure rather than a picture. Both states
     /// say what they are — a one and a three — because an icon that differs only by what is
     /// missing is one a player has to have seen the other state of to read.
@@ -872,6 +910,7 @@ internal sealed class CanvasDrawer : IGameDrawer
     {
         await DrawMute(layout, game.Muted);
         await DrawDrawMode(layout, game.DrawThree);
+        await DrawHintButton(layout, game.Hinting);
 
         if (game.CanUndo)
         {

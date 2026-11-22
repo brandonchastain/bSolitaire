@@ -34,6 +34,10 @@ internal interface ISolitaireView
 
     bool NoWinningLine { get; }
 
+    HintState Hinting { get; }
+
+    Move? Hint { get; }
+
     bool CanBackUp { get; }
 
     bool Celebrating { get; }

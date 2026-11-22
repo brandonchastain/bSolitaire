@@ -179,6 +179,9 @@ internal sealed class BoardLayout
     /// winning line left. Shares the finish offer's slot — see Resize.</summary>
     public Rect BackUpButton { get; private set; }
 
+    /// <summary>The corner button that asks for a move the search can vouch for.</summary>
+    public Rect HintButton { get; private set; }
+
     /// <summary>The corner toggle between turning one card off the stock and turning three.
     /// Third in the bottom-right row, left of the undo.</summary>
     public Rect DrawModeButton { get; private set; }
@@ -308,6 +311,9 @@ internal sealed class BoardLayout
         // which is a developer's switch, but how many cards the stock turns over is how the
         // game plays — and a phone has no D key to press.
         DrawModeButton = new Rect(UndoButton.X - muteSize - gutter, MuteButton.Y, muteSize, muteSize);
+
+        // Fourth in the row. Asked for rather than watched, like the undo beside it.
+        HintButton = new Rect(DrawModeButton.X - muteSize - gutter, MuteButton.Y, muteSize, muteSize);
 
         double ffW = Math.Min(width - 2 * gutter, CardWidth * 2.8);
         double ffH = CardHeight * 0.42;
