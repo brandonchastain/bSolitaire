@@ -39,6 +39,13 @@ internal class Board
     public Board() => Reset();
 
     /// <summary>
+    /// The deck this deal was dealt from, in the order it was dealt. Per-deal state like
+    /// <see cref="DrawCount"/>, and kept out of the snapshot for the same reason: no move
+    /// can change which deal is being played, so undo has nothing to put back.
+    /// </summary>
+    public IReadOnlyList<(Suit Suit, Rank Rank)> Deal { get; private set; } = [];
+
+    /// <summary>
     /// How many cards this deal turns off the stock. Per-deal rather than per-position: the
     /// setting takes effect on the next deal and cannot change partway through one, which is
     /// also why the snapshot does not carry it — no move can change it, so undo cannot either.
@@ -154,10 +161,16 @@ internal class Board
     /// deal and until the next one.</param>
     public void Reset(IReadOnlyList<(Suit Suit, Rank Rank)>? deal = null, int drawCount = 1)
     {
+        // Resolved here rather than left to the dealer, so the board knows which deal it is
+        // playing and can deal it again. A deal is a value: the same order always deals the
+        // same position, which is what makes a second attempt at one the same puzzle rather
+        // than a new one.
+        Deal = deal ?? Dealer.Shuffle();
+
         DrawCount = Math.Max(1, drawCount);
         history.Clear();
         Position.Strip();
-        Dealer.Deal(Position, deal);
+        Dealer.Deal(Position, Deal);
         Play(Sound.Deal);
         AnnounceDeal();
         AllDirty = true;

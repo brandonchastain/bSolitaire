@@ -555,6 +555,136 @@ public class SessionTests
 
     /// <summary>Runs frames and throws away whatever they asked for.</summary>
     [Fact]
+    public void TheStuckBannerOffersAWayBackAndAWayAgain()
+    {
+        var game = Sized();
+        game.Reset();
+        game.Board.Position.Strip();
+        game.Board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        game.Board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.King));
+        game.Board.Position.Place(Tableau(2), Up(Suit.Hearts, Rank.Queen));
+        game.Board.MakeMove(new Move(Tableau(2), Tableau(1), 1));
+
+        Assert.Equal(GameState.Stuck, game.Board.State);
+
+        // Back up, from the banner, on a board that is over: the move that froze it comes
+        // back off and the deal is being played again.
+        var (x, y) = Centre(game.Layout.BackUpBannerButton);
+        game.OnPointerDown(x, y);
+        game.OnPointerUp(x, y);
+
+        Assert.Equal(GameState.Playing, game.Board.State);
+    }
+
+    [Fact]
+    public void TheStuckBannerCanDealTheSameDealAgain()
+    {
+        var game = Sized();
+        game.Reset();
+
+        var deal = game.Board.Deal;
+
+        game.Board.Position.Strip();
+        game.Board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        game.Board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.King));
+        game.Board.Position.Place(Tableau(2), Up(Suit.Hearts, Rank.Queen));
+        game.Board.MakeMove(new Move(Tableau(2), Tableau(1), 1));
+
+        Assert.Equal(GameState.Stuck, game.Board.State);
+
+        var (x, y) = Centre(game.Layout.ReplayBannerButton);
+        game.OnPointerDown(x, y);
+        game.OnPointerUp(x, y);
+
+        Assert.Equal(GameState.Playing, game.Board.State);
+        Assert.Equal(deal, game.Board.Deal);
+    }
+
+    [Fact]
+    public void ABannerButtonThatIsDimmedCannotBePressed()
+    {
+        // A won deal cannot be backed up out of, and the rule in Controls is that a button
+        // which is not offered is not pressable, however much of it is drawn.
+        var game = Sized();
+        LoadFourKings(game);
+
+        for (int frame = 0; frame < 400 && game.State != GameState.Won; frame++)
+        {
+            game.OnKeyDown("Space");
+            game.Update(TimeSpan.FromMilliseconds(frame * 16));
+        }
+
+        Assert.Equal(GameState.Won, game.State);
+        Assert.False(game.CanBackUp);
+
+        int deal = game.Board.DealId;
+        var (x, y) = Centre(game.Layout.BackUpBannerButton);
+        game.OnPointerDown(x, y);
+        game.OnPointerUp(x, y);
+
+        Assert.Equal(deal, game.Board.DealId);
+        Assert.Equal(GameState.Won, game.State);
+    }
+
+    [Fact]
+    public void ReplayingDealsTheSameDealAgain()
+    {
+        var game = Sized();
+        game.Reset();
+
+        var deal = game.Board.Deal;
+        int dealId = game.Board.DealId;
+
+        game.Board.DealFromStock();
+        game.OnKeyDown("KeyP");
+
+        // The same cards, in the same places, as a new attempt rather than the old one
+        // rewound: its own deal, its own clock.
+        Assert.Equal(deal, game.Board.Deal);
+        Assert.NotEqual(dealId, game.Board.DealId);
+        Assert.Empty(game.Board.Position.FaceUpPile);
+        Assert.Equal(0, game.Board.UndoDepth);
+    }
+
+    [Fact]
+    public void ReplayingCountsTheAttemptItGivesUp()
+    {
+        // A deal walked away from part-played is a deal that was played and not won,
+        // however it came to be walked away from.
+        var game = Sized();
+        game.Reset();
+        game.Update(TimeSpan.FromMilliseconds(0));
+        game.Board.DealFromStock();
+
+        game.OnKeyDown("KeyP");
+
+        Assert.Equal(1, game.Score.Games);
+        Assert.Equal(0, game.Score.Wins);
+    }
+
+    [Fact]
+    public void ReplayingLeavesTheNextDealAlone()
+    {
+        // The vetter's prepared deal is for whenever the player asks for a new game. A
+        // replay is the deal they already have, and must not spend it.
+        var game = Sized();
+        game.Reset();
+
+        var replayed = game.Board.Deal;
+
+        for (int frame = 0; frame < 3000; frame++)
+        {
+            game.Update(TimeSpan.FromMilliseconds(frame * 16));
+        }
+
+        game.OnKeyDown("KeyP");
+        Assert.Equal(replayed, game.Board.Deal);
+
+        game.OnKeyDown("KeyR");
+        Assert.NotEqual(replayed, game.Board.Deal);
+    }
+
+    [Fact]
     public void ALostLineIsSaidQuietlyAndLeavesTheDealAlone()
     {
         // The deal was vetted before it was dealt, so a position the search can prove

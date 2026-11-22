@@ -165,7 +165,14 @@ internal sealed class BoardLayout
     /// so the drawer and the hit test can't disagree about where it is.</summary>
     public Rect Banner { get; private set; }
 
-    /// <summary>The button inside <see cref="Banner"/> that deals a new game.</summary>
+    /// <summary>The leftmost of the banner's three, which takes the deal back to the last
+    /// position that could still be won.</summary>
+    public Rect BackUpBannerButton { get; private set; }
+
+    /// <summary>The middle of the banner's three, which deals this same deal again.</summary>
+    public Rect ReplayBannerButton { get; private set; }
+
+    /// <summary>The rightmost of the banner's three, which deals a new one.</summary>
     public Rect NewGameButton { get; private set; }
 
     /// <summary>The offer of a way back, shown when the search has proved there is no
@@ -263,20 +270,26 @@ internal sealed class BoardLayout
 
         // Sized off the card rather than the viewport, so the panel and its text keep the
         // same proportions as everything else on the position.
-        double bannerW = Math.Min(width - 2 * gutter, CardWidth * 4.4);
+        // Wide enough for three actions side by side. Three, always, rather than a count
+        // that depends on what is on offer: geometry that moved with the state of the game
+        // would be geometry the hit test and the drawer could disagree about, and a button
+        // nobody can use is dimmed rather than taken away.
+        double bannerW = Math.Min(width - 2 * gutter, CardWidth * 5.2);
 
         // Three lines now rather than two — what happened, how long it took, and how that
         // compares — so the panel is taller than the headline and detail alone needed.
         double bannerH = CardHeight * 1.4;
         Banner = new Rect((width - bannerW) / 2, (height - bannerH) / 2, bannerW, bannerH);
 
-        double buttonW = Math.Min(bannerW - gutter * 2, CardWidth * 2.1);
         double buttonH = bannerH * 0.27;
-        NewGameButton = new Rect(
-            Banner.X + (bannerW - buttonW) / 2,
-            Banner.Y + bannerH - buttonH - bannerH * 0.11,
-            buttonW,
-            buttonH);
+        double buttonGap = Math.Max(4, gutter * 0.5);
+        double buttonW = (bannerW - (4 * buttonGap)) / 3;
+        double buttonY = Banner.Y + bannerH - buttonH - (bannerH * 0.11);
+        double buttonX = Banner.X + buttonGap;
+
+        BackUpBannerButton = new Rect(buttonX, buttonY, buttonW, buttonH);
+        ReplayBannerButton = new Rect(buttonX + buttonW + buttonGap, buttonY, buttonW, buttonH);
+        NewGameButton = new Rect(buttonX + (2 * (buttonW + buttonGap)), buttonY, buttonW, buttonH);
 
         // The score line runs along the bottom edge, so the button sits clear above it
         // rather than on top of it.

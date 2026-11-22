@@ -22,6 +22,40 @@ public class LayoutTests
 
     [Theory]
     [MemberData(nameof(Viewports))]
+    public void TheBannersThreeActionsFitSideBySide(double width, double height)
+    {
+        // Three ways out of a stuck deal, at every size the board is ever drawn at. They
+        // are laid out the same whatever is on offer, because geometry that moved with the
+        // state of the game is geometry the hit test and the drawer could disagree about.
+        var layout = new BoardLayout(width, height);
+
+        var buttons = new[] { layout.BackUpBannerButton, layout.ReplayBannerButton, layout.NewGameButton };
+
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            Assert.True(buttons[i].W > 0 && buttons[i].H > 0, $"button {i} has no size");
+
+            Assert.True(
+                buttons[i].X >= layout.Banner.X - 0.001 &&
+                buttons[i].X + buttons[i].W <= layout.Banner.X + layout.Banner.W + 0.001,
+                $"button {i} runs outside the panel");
+
+            Assert.True(
+                buttons[i].Y >= layout.Banner.Y &&
+                buttons[i].Y + buttons[i].H <= layout.Banner.Y + layout.Banner.H + 0.001,
+                $"button {i} runs outside the panel");
+
+            if (i > 0)
+            {
+                Assert.True(
+                    buttons[i - 1].X + buttons[i - 1].W <= buttons[i].X + 0.001,
+                    $"buttons {i - 1} and {i} overlap");
+            }
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
     public void TheBottomRowGivesEachThingItsOwnZone(double width, double height)
     {
         // The clock, the diagnostics line and the player's record all want the same strip.
