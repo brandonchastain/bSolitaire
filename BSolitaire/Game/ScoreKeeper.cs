@@ -77,12 +77,11 @@ internal sealed class ScoreKeeper
 
     /// <summary>
     /// Counts a deal once it is over — won, stuck, or proved lost — and once only, reporting
-    /// whether anything was counted. Keyed to the board's version rather than to a flag this
-    /// class clears: a finished board reports the same state on every frame until it is dealt
-    /// again, and dealing again does not always come through the game's reset — the banner's
-    /// button resets the board itself. The deal's own identity is what this keys on rather
-    /// than the position's: a player who takes a move back off a stuck board is still playing
-    /// the same deal, and it must not be counted twice for getting stuck twice.
+    /// whether anything was counted. Keyed to the deal rather than to a flag this class
+    /// clears, because a finished board reports the same state on every frame until it is
+    /// dealt again. And keyed to the deal rather than to the position: a player who takes a
+    /// move back off a stuck board is still playing the same deal, and must not be counted
+    /// twice for getting stuck twice.
     /// </summary>
     public bool Update()
     {
