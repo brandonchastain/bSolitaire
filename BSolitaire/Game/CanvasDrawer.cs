@@ -507,7 +507,7 @@ internal sealed class CanvasDrawer : IGameDrawer
             // The panel dims the whole board, cached controls and all, so they are drawn
             // again on top of it — turning the fanfare off is exactly what a player wants to
             // do at the moment a game ends.
-            await DrawBanner(layout, game.State);
+            await DrawBanner(layout, game.State, game.LastGameSeconds, game.Score);
             await DrawChrome(layout, game);
         }
 
@@ -528,6 +528,18 @@ internal sealed class CanvasDrawer : IGameDrawer
         // Measured after the batch flushes, so it includes the interop round trip.
         // Reported on the next draw, since the text is already in this one.
         lastDrawMs = clock.Elapsed.TotalMilliseconds - startedAt;
+    }
+
+    /// <summary>Seconds as minutes and seconds, or a dash where there is no answer yet —
+    /// a player with no wins has no average win, and a zero there would be a lie.</summary>
+    private static string Clock(long? seconds)
+    {
+        if (seconds is not { } total)
+        {
+            return "\u2014";
+        }
+
+        return $"{total / 60}:{total % 60:D2}";
     }
 
     private static string RankLabel(Rank rank) => (int)rank switch
@@ -722,7 +734,11 @@ internal sealed class CanvasDrawer : IGameDrawer
     /// from the layout, which is also what the hit test reads, so the button can't drift away
     /// from the thing you click.
     /// </summary>
-    private async ValueTask DrawBanner(BoardLayout layout, GameState state)
+    private async ValueTask DrawBanner(
+        BoardLayout layout,
+        GameState state,
+        long? lastGameSeconds,
+        PlayerScore score)
     {
         var panel = layout.Banner;
         var button = layout.NewGameButton;
@@ -748,12 +764,25 @@ internal sealed class CanvasDrawer : IGameDrawer
         };
 
         await Fill("#e8f0e8");
-        await Font($"bold {panel.H * 0.19:F0}px sans-serif");
+        await Font($"bold {panel.H * 0.17:F0}px sans-serif");
         await Align("center");
-        await ctx.FillTextAsync(headline, panel.X + panel.W / 2, panel.Y + panel.H * 0.28);
+        await ctx.FillTextAsync(headline, panel.X + panel.W / 2, panel.Y + panel.H * 0.23);
 
-        await Font($"{panel.H * 0.12:F0}px sans-serif");
-        await ctx.FillTextAsync(detail, panel.X + panel.W / 2, panel.Y + panel.H * 0.47);
+        await Font($"{panel.H * 0.105:F0}px sans-serif");
+        await ctx.FillTextAsync(detail, panel.X + panel.W / 2, panel.Y + panel.H * 0.38);
+
+        // How long this one took, and what that is next to the rest. The deal just played
+        // is the moment a player cares what their average is, and it is the one place the
+        // times are shown — the score line along the bottom is full.
+        if (lastGameSeconds is { } taken)
+        {
+            await Fill("#b9cfbe");
+            await Font($"{panel.H * 0.09:F0}px sans-serif");
+            await ctx.FillTextAsync(
+                $"{Clock(taken)}  ·  {Clock(score.AverageGameSeconds)} average  ·  {Clock(score.AverageWinSeconds)} a win",
+                panel.X + panel.W / 2,
+                panel.Y + panel.H * 0.52);
+        }
 
         await RoundedPath(button, button.H * 0.28);
         await Fill("#0b6b3a");

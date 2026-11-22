@@ -38,6 +38,8 @@ internal interface ISolitaireView
 
     bool DrawThree { get; }
 
+    long? LastGameSeconds { get; }
+
     bool Muted { get; }
 
     PlayerScore Score { get; }

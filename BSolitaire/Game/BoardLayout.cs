@@ -204,14 +204,17 @@ internal sealed class BoardLayout
         // Sized off the card rather than the viewport, so the panel and its text keep the
         // same proportions as everything else on the position.
         double bannerW = Math.Min(width - 2 * gutter, CardWidth * 4.4);
-        double bannerH = CardHeight * 1.15;
+
+        // Three lines now rather than two — what happened, how long it took, and how that
+        // compares — so the panel is taller than the headline and detail alone needed.
+        double bannerH = CardHeight * 1.4;
         Banner = new Rect((width - bannerW) / 2, (height - bannerH) / 2, bannerW, bannerH);
 
         double buttonW = Math.Min(bannerW - gutter * 2, CardWidth * 2.1);
-        double buttonH = bannerH * 0.34;
+        double buttonH = bannerH * 0.27;
         NewGameButton = new Rect(
             Banner.X + (bannerW - buttonW) / 2,
-            Banner.Y + bannerH - buttonH - bannerH * 0.14,
+            Banner.Y + bannerH - buttonH - bannerH * 0.11,
             buttonW,
             buttonH);
 
