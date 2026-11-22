@@ -136,6 +136,14 @@ internal sealed class Solitaire : ISolitaireView
     /// deal in progress — this is what the button on the felt has to show.</summary>
     public bool DrawThree => Score.DrawMode == DrawMode.DrawThree;
 
+    /// <summary>
+    /// Whether the player has asked to change how many cards the stock turns over and has
+    /// not yet said whether to start a new deal for it. The host asks; this only remembers
+    /// that it was asked, because the question is a DOM one and the game layer has no idea
+    /// there is a browser.
+    /// </summary>
+    public bool WantsDrawChange { get; private set; }
+
     /// <summary>How long the deal that just ended took. The averages are on the record
     /// itself, which the drawer already has; this is the one number that is not.</summary>
     public long? LastGameSeconds => scores.LastGameSeconds;
@@ -321,6 +329,24 @@ internal sealed class Solitaire : ISolitaireView
         Reset();
     }
 
+    /// <summary>
+    /// Changes how many cards the stock turns over, and deals a game played that way. The
+    /// deal in progress is abandoned, and counted as abandoned, exactly as New Game does.
+    /// </summary>
+    public void ConfirmDrawChange()
+    {
+        WantsDrawChange = false;
+        Guarded(scores.ToggleDrawMode);
+        Reset();
+    }
+
+    /// <summary>Leaves the setting and the deal alone.</summary>
+    public void CancelDrawChange()
+    {
+        WantsDrawChange = false;
+        NeedsRedraw = true;
+    }
+
     /// <summary>Abandons the current game and deals a new one.</summary>
     public void Reset()
     {
@@ -410,10 +436,12 @@ internal sealed class Solitaire : ISolitaireView
                 break;
 
             case PlayerCommand.ToggleDrawMode:
-                // Takes effect on the next deal. Changing what the stock does under a player
-                // who has already started turning it would be changing the game they are
-                // playing, and the deal they are on keeps the rules it was dealt with.
-                scores.ToggleDrawMode();
+                // Asked rather than done. The setting cannot touch the deal in progress —
+                // the rules a deal is played under are the ones it was dealt with — so
+                // changing it quietly left the player pressing a button that visibly did
+                // nothing, and concluding it was broken. It changes the next deal, so the
+                // honest thing is to say so and deal one.
+                WantsDrawChange = true;
                 break;
 
             case PlayerCommand.Undo:

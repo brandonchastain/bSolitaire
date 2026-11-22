@@ -411,11 +411,11 @@ public class SessionTests
     }
 
     [Fact]
-    public void ChangingTheDrawTakesEffectOnTheNextDealAndNotThisOne()
+    public void ChangingTheDrawAsksFirstAndThenDealsAGamePlayedThatWay()
     {
-        // Changing what the stock does under a player who has already started turning it
-        // would be changing the game they are playing. The deal they are on keeps the rules
-        // it was dealt with.
+        // The deal in progress keeps the rules it was dealt with, so the setting can only
+        // reach the next one. Changing it quietly meant pressing a button that visibly did
+        // nothing, which reads as broken — so it asks, and then deals.
         var game = Sized();
         game.Reset();
 
@@ -423,12 +423,49 @@ public class SessionTests
 
         game.OnKeyDown("KeyD");
 
+        // The question, and nothing else: the setting and the deal are both untouched.
+        Assert.True(game.WantsDrawChange);
+        Assert.True(game.DrawThree);
         Assert.Equal(3, game.Board.DrawCount);
+
+        game.ConfirmDrawChange();
+
+        Assert.False(game.WantsDrawChange);
         Assert.False(game.DrawThree);
-
-        game.Reset();
-
         Assert.Equal(1, game.Board.DrawCount);
+    }
+
+    [Fact]
+    public void ThinkingBetterOfTheChangeLeavesTheGameAlone()
+    {
+        var game = Sized();
+        game.Reset();
+        int deal = game.Board.DealId;
+
+        game.OnKeyDown("KeyD");
+        game.CancelDrawChange();
+
+        Assert.False(game.WantsDrawChange);
+        Assert.True(game.DrawThree);
+        Assert.Equal(3, game.Board.DrawCount);
+        Assert.Equal(deal, game.Board.DealId);
+    }
+
+    [Fact]
+    public void ADealGivenUpForTheSakeOfTheSettingIsStillCounted()
+    {
+        // Confirming abandons the deal in progress, and an abandoned deal is a deal that
+        // was played and not won, however it came to be abandoned.
+        var game = Sized();
+        game.Reset();
+        game.Update(TimeSpan.FromMilliseconds(0));
+        game.Board.DealFromStock();
+
+        game.OnKeyDown("KeyD");
+        game.ConfirmDrawChange();
+
+        Assert.Equal(1, game.Score.Games);
+        Assert.Equal(0, game.Score.Wins);
     }
 
     [Fact]
@@ -437,12 +474,10 @@ public class SessionTests
         var game = Sized();
         var (x, y) = Centre(game.Layout.DrawModeButton);
 
-        Assert.True(game.DrawThree);
-
         game.OnPointerDown(x, y);
         game.OnPointerUp(x, y);
 
-        Assert.False(game.DrawThree);
+        Assert.True(game.WantsDrawChange);
         Assert.Null(game.Drag);
     }
 

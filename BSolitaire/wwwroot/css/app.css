@@ -77,3 +77,55 @@ html, body {
     color: #ffffff;
     cursor: pointer;
 }
+
+#drawchange {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 10;
+}
+
+#drawchange .panel {
+    max-width: 22rem;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #e8f0e8;
+    background: #12351f;
+    color: #e8f0e8;
+    font: 16px sans-serif;
+    text-align: center;
+}
+
+#drawchange p {
+    margin: 0 0 8px;
+}
+
+#drawchange .note {
+    margin-bottom: 16px;
+    font-size: 14px;
+    color: #b9cfbe;
+}
+
+#drawchange .buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
+
+#drawchange button {
+    font: 16px sans-serif;
+    padding: 8px 14px;
+    border-radius: 4px;
+    border: 1px solid #e8f0e8;
+    background: #0b6b3a;
+    color: #ffffff;
+    cursor: pointer;
+}
+
+#drawchange button.quiet {
+    background: transparent;
+    color: #e8f0e8;
+}

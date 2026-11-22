@@ -392,3 +392,56 @@ For positions that are neither proven dead (Tier 1) nor proven unwinnable (Tier 
 - Cloud sync or cross-device stats; the record stays in localStorage with the existing score.
 - Scoring systems, Vegas rules, timed-move bonuses.
 - Draw-3 redeal limits (redeals stay unlimited, as today).
+
+---
+
+## Fixes after release (#28)
+
+Two bugs reported from play once all four changes were live.
+
+### The hover outline landed on the buried card
+
+Hovering the waste's three-card fan highlighted the card at the back of it instead of the
+one under the pointer.
+
+`CardRect` took a `pileCount` in #25, because the waste's fan is anchored to the end of the
+pile rather than the start. It was given a **default of 1**, so that call sites which do not
+care about the waste — the tableau, the foundations, the stock — would not all have to be
+touched. Four that *did* care were missed, and every one of them compiled: the hover
+outline, the drop-target ring, the grab offset in `PointerInput`, and the flight origin in
+`Animator`. Each asked for a rect without the pile's length and got back the fan's first
+place, which is where the buried card sits.
+
+The hover outline is the one a player sees. The grab offset is the one a player feels: the
+held stack leapt sideways by the width of the fan as it was picked up. A test now presses
+the top of a fan and asserts the drag offset is measured from the card under the pointer —
+it fails by 53 pixels against the old code, which is exactly two fan offsets.
+
+The lesson is about the default, not the call sites. A defaulted parameter turned "every
+caller must now say how long the pile is" into something the compiler would not ask about.
+
+### Draw-one did not take effect
+
+The setting was saved, the button on the felt showed `1`, and the stock kept turning three.
+
+`Begin()` — the first deal of a session, added in #23 — ran **before** `LoadScore()`. The
+host had deliberately started the frame loop before loading the record, so that a record
+that would not load could never cost the player their game. #23 put the first deal in that
+same window, so it was dealt under the default rules, and the record arrived a moment later
+and lit up a button describing a game the board was not playing.
+
+The record now loads first, with the failure handled where it happens rather than by
+ordering: a record that will not read is logged and skipped, and the game still starts. The
+ordering had been carrying a guarantee it no longer deserved once a deal depended on it.
+
+### Changing the draw now asks
+
+A deal keeps the rules it was dealt with, so the setting could only ever reach the next
+deal. Pressing the button therefore did nothing a player could see, which reads as broken
+even when it is working.
+
+The toggle now asks — "Turn one card off the stock instead of three? The deal you are on
+keeps its own rules, so this starts a new game" — and deals on confirmation. The abandoned
+deal is counted as played and not won, like any other. A DOM overlay rather than a canvas
+panel, for the same reason the nickname prompt is one: buttons that a keyboard can reach
+have to be real markup.

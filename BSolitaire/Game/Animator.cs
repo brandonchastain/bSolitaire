@@ -223,7 +223,10 @@ internal sealed class Animator
             releaseFrom != motion.From ||
             motion.FromIndex < releaseIndex)
         {
-            return layout.CardRect(motion.From, motion.FromIndex);
+            // A motion describes a move that has already happened, so the pile it came from
+            // is already short of it — its length then was one more than the moving card's
+            // index, which is the only thing the waste's fan needs to place it where it was.
+            return layout.CardRect(motion.From, motion.FromIndex, motion.FromIndex + 1);
         }
 
         // A held run is fanned under the pointer exactly as it was in its pile, so each card
