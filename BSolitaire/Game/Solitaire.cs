@@ -136,6 +136,10 @@ internal sealed class Solitaire : ISolitaireView
     /// deal in progress — this is what the button on the felt has to show.</summary>
     public bool DrawThree => Score.DrawMode == DrawMode.DrawThree;
 
+    /// <summary>How long the deal that just ended took. The averages are on the record
+    /// itself, which the drawer already has; this is the one number that is not.</summary>
+    public long? LastGameSeconds => scores.LastGameSeconds;
+
     /// <summary>
     /// Noises the board has asked for since the host last drained them. Nothing here makes a
     /// sound; the host plays them and calls <see cref="ClearSounds"/>.
@@ -205,6 +209,10 @@ internal sealed class Solitaire : ISolitaireView
         }
 
         Celebrate();
+
+        // The frame's own clock, handed over as it arrived. ScoreKeeper keeps the previous
+        // one and takes the difference itself, the same way the animator does.
+        scores.Tick(elapsed.TotalMilliseconds);
 
         if (scores.Update())
         {
@@ -319,6 +327,13 @@ internal sealed class Solitaire : ISolitaireView
         fastForward.Stop();
         cascade.Stop();
         animator.Clear();
+
+        // Before the new deal, while the old one is still the board's: a deal walked away
+        // from part-played is a deal that was played and lost, and this is the only moment
+        // it can be counted. Every new deal comes through here, the banner's button
+        // included, so there is one place to do it.
+        Guarded(() => scores.Abandon());
+
         Guarded(() => Board.Reset(vetter.TakeDeal(), DrawThree ? 3 : 1));
     }
 

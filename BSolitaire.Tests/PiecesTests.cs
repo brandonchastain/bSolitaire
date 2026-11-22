@@ -354,6 +354,60 @@ public class PiecesTests
     }
 
     [Fact]
+    public void AnAverageOfNothingIsNotZero()
+    {
+        // A player with no wins has no average win. Zero there would read as instant ones.
+        var fresh = new PlayerScore();
+
+        Assert.Null(fresh.AverageGameSeconds);
+        Assert.Null(fresh.AverageWinSeconds);
+
+        var played = new PlayerScore
+        {
+            TimedGames = 4,
+            TotalGameSeconds = 200,
+            TimedWins = 1,
+            TotalWinSeconds = 80,
+        };
+
+        Assert.Equal(50, played.AverageGameSeconds);
+        Assert.Equal(80, played.AverageWinSeconds);
+    }
+
+    [Fact]
+    public void EveryTimeInTheRecordSurvivesBeingStoredAndLoaded()
+    {
+        // CopyFrom is field by field, and this change adds four fields to it.
+        var scores = new ScoreKeeper(new Board());
+        scores.Score.TimedGames = 7;
+        scores.Score.TotalGameSeconds = 700;
+        scores.Score.TimedWins = 3;
+        scores.Score.TotalWinSeconds = 360;
+
+        var reloaded = new ScoreKeeper(new Board());
+
+        Assert.True(reloaded.Load(scores.ToJson()));
+        Assert.Equal(7, reloaded.Score.TimedGames);
+        Assert.Equal(700, reloaded.Score.TotalGameSeconds);
+        Assert.Equal(3, reloaded.Score.TimedWins);
+        Assert.Equal(360, reloaded.Score.TotalWinSeconds);
+    }
+
+    [Fact]
+    public void ARecordFromBeforeAnythingWasTimedLoadsWithNoTimes()
+    {
+        // A thousand games already played have no times against them, and must not be
+        // averaged as though they took no time at all.
+        var scores = new ScoreKeeper(new Board());
+
+        Assert.True(scores.Load("{\"Games\":1000,\"Wins\":150}"));
+
+        Assert.Equal(1000, scores.Score.Games);
+        Assert.Equal(0, scores.Score.TimedGames);
+        Assert.Null(scores.Score.AverageGameSeconds);
+    }
+
+    [Fact]
     public void ARecordFromAnOlderVersionKeepsWhatItHas()
     {
         var scores = new ScoreKeeper(new Board());
@@ -388,6 +442,146 @@ public class PiecesTests
 
         Assert.True(scores.Load("{\"Nickname\":\"Ada\",\"Games\":2}"));
         Assert.Equal(DrawMode.DrawThree, scores.Score.DrawMode);
+    }
+
+    [Fact]
+    public void AWonDealIsTimedAndSoIsTheWin()
+    {
+        var board = FourKingsFromDone();
+        var scores = new ScoreKeeper(board);
+        double now = 0;
+
+        scores.Tick(now);
+        board.FastForwardStep();
+        Play(scores, ref now, seconds: 1);
+
+        while (board.State == GameState.Playing)
+        {
+            board.FastForwardStep();
+        }
+
+        scores.Tick(now += 16);
+
+        Assert.True(scores.Update());
+        Assert.Equal(1, scores.Score.TimedGames);
+        Assert.Equal(1, scores.Score.TimedWins);
+        Assert.Equal(1, scores.Score.TotalGameSeconds);
+        Assert.Equal(1, scores.Score.TotalWinSeconds);
+    }
+
+    [Fact]
+    public void ALostDealIsTimedButIsNoWin()
+    {
+        // Two aces to send home, and two kings that can only swap which column is empty.
+        // The deal is alive until the second ace goes, which is what the clock has to
+        // measure — the time before the move that ended it, not after.
+        var board = Empty();
+        board.Position.Place(Tableau(0), Up(Suit.Hearts, Rank.King));
+        board.Position.Place(Tableau(1), Up(Suit.Spades, Rank.King));
+        board.Position.Place(Tableau(2), Up(Suit.Diamonds, Rank.Ace));
+        board.Position.Place(Tableau(3), Up(Suit.Clubs, Rank.Ace));
+        board.Settle();
+
+        var scores = new ScoreKeeper(board);
+        double now = 0;
+
+        scores.Tick(now);
+        Assert.True(board.MakeMove(new Move(Tableau(2), Foundation(0), 1)));
+        Assert.Equal(GameState.Playing, board.State);
+
+        Play(scores, ref now, seconds: 2);
+
+        Assert.True(board.MakeMove(new Move(Tableau(3), Foundation(1), 1)));
+        scores.Tick(now += 16);
+
+        Assert.Equal(GameState.Stuck, board.State);
+        Assert.True(scores.Update());
+
+        Assert.Equal(1, scores.Score.TimedGames);
+        Assert.Equal(0, scores.Score.TimedWins);
+        Assert.Equal(2, scores.Score.TotalGameSeconds);
+    }
+
+    [Fact]
+    public void ADealWalkedAwayFromPartPlayedStillCounts()
+    {
+        // The games people give up on are the slow ones. Leaving them out would make every
+        // average flatter than the play that earned it.
+        var board = new Board();
+        var scores = new ScoreKeeper(board);
+        double now = 0;
+
+        scores.Tick(now);
+        board.DealFromStock();
+        Play(scores, ref now, seconds: 3);
+
+        Assert.True(scores.Abandon());
+
+        Assert.Equal(1, scores.Score.Games);
+        Assert.Equal(0, scores.Score.Wins);
+        Assert.Equal(1, scores.Score.TimedGames);
+        Assert.Equal(3, scores.Score.TotalGameSeconds);
+
+        // And once only, however it is asked.
+        Assert.False(scores.Abandon());
+        Assert.Equal(1, scores.Score.Games);
+    }
+
+    [Fact]
+    public void ADealNobodyTouchedIsNotAGameTheyLost()
+    {
+        var board = new Board();
+        var scores = new ScoreKeeper(board);
+
+        scores.Tick(0);
+        scores.Tick(16);
+
+        Assert.False(scores.Abandon());
+        Assert.Equal(0, scores.Score.Games);
+        Assert.Equal(0, scores.Score.TimedGames);
+    }
+
+    [Fact]
+    public void TimeSpentAwayFromTheTabDoesNotCount()
+    {
+        // The frame loop stops while the tab is hidden; the clock it reports does not. Come
+        // back after a minute and the next frame arrives a minute after the last one.
+        var board = new Board();
+        var scores = new ScoreKeeper(board);
+        double now = 0;
+
+        scores.Tick(now);
+        board.DealFromStock();
+        Play(scores, ref now, seconds: 1);
+
+        now += 60_000;
+        scores.Tick(now);
+
+        Play(scores, ref now, seconds: 1);
+
+        Assert.True(scores.Abandon());
+        Assert.Equal(2, scores.Score.TotalGameSeconds);
+    }
+
+    [Fact]
+    public void AFinishedDealIsTimedOnceHoweverManyFramesPass()
+    {
+        var board = FourKingsFromDone();
+        var scores = new ScoreKeeper(board);
+
+        scores.Tick(0);
+
+        while (board.State == GameState.Playing)
+        {
+            board.FastForwardStep();
+        }
+
+        Assert.True(scores.Update());
+        Assert.False(scores.Update());
+        Assert.False(scores.Update());
+
+        Assert.Equal(1, scores.Score.TimedGames);
+        Assert.Equal(1, scores.Score.TimedWins);
     }
 
     // -- DealVetter -------------------------------------------------------------------
@@ -465,6 +659,17 @@ public class PiecesTests
         Assert.True(vetter.HasDeal);
         Assert.NotNull(vetter.TakeDeal());
         Assert.False(vetter.HasDeal);
+    }
+
+    /// <summary>Frames at sixty hertz, enough of them to add up to the seconds asked for.
+    /// One long jump instead would be thrown away as time spent off the tab.</summary>
+    private static void Play(ScoreKeeper scores, ref double now, int seconds)
+    {
+        for (int frame = 0; frame < seconds * 125; frame++)
+        {
+            now += 8;
+            scores.Tick(now);
+        }
     }
 
     /// <summary>Runs a search to the end. Generous, because this is not a frame-budget test.</summary>

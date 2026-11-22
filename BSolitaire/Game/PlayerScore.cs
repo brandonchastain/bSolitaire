@@ -27,6 +27,28 @@ internal sealed class PlayerScore
     /// deal, never partway through one.</summary>
     public DrawMode DrawMode { get; set; }
 
+    /// <summary>Deals with a time against them: won, lost, and walked away from after at
+    /// least one move. Its own count rather than <see cref="Games"/>, because every record
+    /// saved before this existed has games in it and no time for any of them.</summary>
+    public int TimedGames { get; set; }
+
+    /// <summary>Seconds over <see cref="TimedGames"/>. A sum and a count rather than a list
+    /// of times: an average needs no more than this, and a player a thousand games in should
+    /// not be carrying a thousand numbers around to get one.</summary>
+    public long TotalGameSeconds { get; set; }
+
+    public int TimedWins { get; set; }
+
+    public long TotalWinSeconds { get; set; }
+
+    /// <summary>Average seconds per timed deal, or null before there is one to average.</summary>
+    [JsonIgnore]
+    public long? AverageGameSeconds => TimedGames > 0 ? TotalGameSeconds / TimedGames : null;
+
+    /// <summary>Average seconds per win, or null before the first one.</summary>
+    [JsonIgnore]
+    public long? AverageWinSeconds => TimedWins > 0 ? TotalWinSeconds / TimedWins : null;
+
     /// <summary>The line drawn on the board. A player with no nickname yet is still a player.</summary>
     [JsonIgnore]
     public string Summary =>
@@ -46,5 +68,9 @@ internal sealed class PlayerScore
         Muted = other.Muted;
         ShowStats = other.ShowStats;
         DrawMode = other.DrawMode;
+        TimedGames = other.TimedGames;
+        TotalGameSeconds = other.TotalGameSeconds;
+        TimedWins = other.TimedWins;
+        TotalWinSeconds = other.TotalWinSeconds;
     }
 }

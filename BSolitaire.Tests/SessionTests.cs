@@ -446,6 +446,34 @@ public class SessionTests
         Assert.Null(game.Drag);
     }
 
+    [Fact]
+    public void StartingANewGamePartWayThroughCountsTheOneLeftBehind()
+    {
+        // Through the session, which is where the flush actually hangs: every new deal goes
+        // through Reset, so that is the one place a half-played deal can still be counted.
+        var game = Sized();
+        game.Reset();
+
+        double now = 0;
+        game.Update(TimeSpan.FromMilliseconds(now));
+        game.Board.DealFromStock();
+
+        for (int frame = 0; frame < 125; frame++)
+        {
+            now += 8;
+            game.Update(TimeSpan.FromMilliseconds(now));
+        }
+
+        Assert.Equal(0, game.Score.Games);
+
+        game.OnKeyDown("KeyR");
+
+        Assert.Equal(1, game.Score.Games);
+        Assert.Equal(0, game.Score.Wins);
+        Assert.Equal(1, game.Score.TimedGames);
+        Assert.Equal(1, game.Score.TotalGameSeconds);
+    }
+
     private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
 
     /// <summary>A game sized like a real viewport, so the buttons are where the layout puts
