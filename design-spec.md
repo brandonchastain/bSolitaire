@@ -1,8 +1,72 @@
 # bSolitaire — Feature Design Spec: Draw-3, Game Timing, Earlier Lost-Game Detection
 
-**Version:** 2.1 — Nov 22, 2026 (facts section restructured and verified against the checked-out repo at `41df488`; four v2.0 claims corrected — see Landmines 2 and 4)
+**Version:** 3.0 — Nov 22, 2026 — **as built**. Everything below shipped in #23, #24, #25
+and #26, except where "What actually shipped" says otherwise. Read that section before
+trusting any sentence in this one: a plan written before the code was read got several
+things wrong, and this document is only useful now if it says which.
 **Repo:** github.com/brandonchastain/bSolitaire — Blazor WebAssembly, C#/.NET 9, 2D canvas.
 **Scope:** (1) draw three cards at a time, (2) time each game and keep stats (average time per game, average time per win), (3) surface a lost game sooner than the game currently does.
+
+## What actually shipped
+
+Four changes, in this order, each merged green and deployed:
+
+| | |
+| --- | --- |
+| #23 | **Deal only the games that can be won.** New. Not in the plan below. |
+| #24 | Know a dead deal at the end of the pass — Feature 3, Tier 1 only. |
+| #25 | Draw three cards, with a fanned waste — Feature 1. |
+| #26 | Time every deal — Feature 2. |
+
+### Feature 3 was reframed, and most of it dropped
+
+The plan's three tiers all *detect* a lost deal sooner. Asked which mattered, Brandon said
+the problem was being handed a deal that was never winnable at all — and that other
+solitaire games do not do this. They do not, because they deal only winnable deals, and the
+repo already had a solver that could say so. So #23 vets deals before the player sees them,
+and the question the tiers were answering mostly stops arising.
+
+Tier 1 shipped anyway, because the pass-aware check is worth having on its own. **Tier 2**
+(a cross-move cache of proven-unwinnable positions) and **Tier 3** (the advisory "looks
+lost" button) were dropped: both are latency and consolation work for a problem #23 removes
+at the source.
+
+What #23 promises is that a win exists for someone who can see the face-down cards. Not
+that the player will find it. Under draw-three the solver's model is more permissive than
+the real game, so that promise is weaker there — it still removes every provably dead deal.
+
+### Three claims below turned out to be false
+
+- **"The `Solver` consumes `LegalMoves`, so it inherits draw-3 automatically."** It does
+  not. The solver has its own `Packed`/`Successors` search and models the deck as an
+  unordered set, so it is draw-count blind. Draw-three needed **no solver changes**, and
+  resolution rates are unchanged rather than "typically worse". `LegalMoves` has exactly one
+  production caller, `Rules.IsStuck`. `DESIGN.md` said otherwise too, and was corrected in
+  #24.
+- **"`Board.RecycleWaste()` is unchanged, so the draw-3 grouping repeats identically each
+  pass."** The grouping did not repeat, because the stock was not turning the drawn packet
+  over — so draw-three showed the card off the top of the stock instead of the third one,
+  and every pass dealt a different grouping. #25 turns the packet, which makes both true.
+  A test written to assert this sentence is what caught it.
+- **"rAF is suspended while the tab is hidden, so a clock accumulated from `elapsed`
+  excludes background time for free."** Suspension stops the frames, not the clock:
+  `performance.now()` keeps advancing, and `Update`'s `elapsed` parameter is that clock, not
+  a per-frame delta. #26 accumulates deltas and discards any gap over 250ms. Measured in a
+  throttled browser pane: 981ms between frames, against 16ms with the page active.
+
+### Smaller deviations
+
+- The draw count reaches `Rules` as a parameter, but the set of deck cards a bigger draw can
+  reach is **deliberately left as every card** — the same over-approximation as before. It
+  is not the obvious every-nth card, because turning the waste back over reverses it. The
+  wrong narrowing here would declare winnable deals dead, so it was not attempted.
+- `FastForwardStep` deals one card at a time whatever the setting, so `CanFastForward`'s
+  reachability argument holds unchanged.
+- The times are on the end-of-game banner and nowhere else. The bottom score line is full,
+  and it already overlaps the `ShowStats` overlay on a phone — pre-existing, still there.
+- `FastestWinSeconds` was dropped as a field nobody asked for.
+
+---
 
 ## Codebase facts this spec is written against
 
@@ -78,8 +142,9 @@ plausible implementation compiles, passes review, and is wrong.
   real but not tight. (Tableau `FanOffset` is vertical and derived from `CardHeight`;
   the waste needs its own horizontal offset, interpolated across `Compactness` like
   everything else.)
-- **`Board.RecycleWaste()` needs no change.** It flips the whole waste back in order, so
-  draw-3 grouping repeats identically on each pass, and redeals stay unlimited.
+- **`Board.RecycleWaste()` needs no change** — but the draw did. ~~It flips the whole waste
+  back in order, so draw-3 grouping repeats identically on each pass~~: it did not, until
+  #25 made the stock turn the drawn packet over. Redeals stay unlimited.
   `FastForwardStep()` reaches a playable card via `DealFromStock()`/`RecycleWaste()`, so it
   works unchanged — just in steps of 3.
 
@@ -195,9 +260,9 @@ Stock draws turn over 3 cards instead of 1, as the default way the game plays, w
 
 **The draw itself.**
 - `Board.DealFromStock()` issues `Move(FaceDown/0 → FaceUp/0, min(drawCount, stock.Count))`. `Rules.IsLegal` already validates a multi-card stock move (the FaceDown source is the documented exception to the face-up check; foundations' count-1 rule doesn't apply to a FaceUp destination). No legality changes expected — verify with a test.
-- `Rules.LegalMoves` must yield the stock move with the same count, since `IsStuck`, `FastForward`, and the `Solver` all consume `LegalMoves`. The draw count therefore has to be visible at the `Rules` layer for the active deal — pass it as a parameter or read it from a property on `Position`. Do **not** hardcode 3 in `Rules`; the solver and stuck checks must evaluate the deal actually being played.
+- `Rules.LegalMoves` must yield the stock move with the same count, since `IsStuck` consumes `LegalMoves`. (~~`FastForward` and the `Solver`~~ do not: the fast-forward asks `FoundationFor` directly and the solver generates its own successors.) The draw count therefore has to be visible at the `Rules` layer for the active deal — pass it as a parameter or read it from a property on `Position`. Do **not** hardcode 3 in `Rules`; the solver and stuck checks must evaluate the deal actually being played.
 - **Flip all drawn cards.** `Board.MakeMove`'s stock branch currently flips only `FaceUpPile[^1]`. For a draw of *n*, flip each of the *n* moved cards (they land face-down-flagged and all become showing in the waste). The `Motion` list already emits one motion per moved card with `reveals` set — confirm the animator/atlas path handles 3 simultaneous reveals; the deal animation already flies 28 cards, so this should be well within capacity.
-- `Board.RecycleWaste()` is unchanged: it flips the whole waste back in order, so the draw-3 grouping repeats identically each pass. Unlimited redeals stay.
+- ~~`Board.RecycleWaste()` is unchanged: it flips the whole waste back in order, so the draw-3 grouping repeats identically each pass.~~ **Wrong when written.** The grouping repeated only once #25 made the stock turn the drawn packet over, which also fixed draw-three showing the wrong card of the three. Unlimited redeals stay.
 - `FastForwardStep()` calls `DealFromStock()`/`RecycleWaste()` to cycle to a playable card — it works unchanged, just in steps of 3.
 
 **Waste display (the real work in this feature).**
@@ -210,7 +275,7 @@ Stock draws turn over 3 cards instead of 1, as the default way the game plays, w
 
 **Solver & stuck-check impact (do not skip).**
 - Draw-3 changes which stock cards can ever surface in a pass: only the card at the top of each drawn group is playable, and playing it shifts the grouping for the rest of the pass. `Rules.IsStuck`'s whole-deck `HasHome` scan becomes **unsound** under draw-3 (a buried card with a home may never surface). See Feature 3 — the pass-aware stuck check specified there is written to be correct for both modes, and Feature 1 must not ship with the old scan silently applying to draw-3 deals. Minimum viable guard if Feature 3 lands later: under draw-3, `IsStuck` may only count a stock/waste card if it can surface given the current grouping (its position from the top of the combined stock+waste sequence is reachable in steps of the draw count, accounting for cards already played from the waste this pass). When in doubt, stay conservative in the direction the current code already chose: `IsStuck` returning false (game continues) is an annoyance; returning true on a live game is a correctness bug.
-- The `Solver` consumes `LegalMoves`, so it inherits draw-3 automatically once `LegalMoves` is mode-aware. Expect different (typically worse) resolution rates under draw-3; re-run the SolverTests measurement approach before/after if budgets are touched.
+- ~~The `Solver` consumes `LegalMoves`, so it inherits draw-3 automatically once `LegalMoves` is mode-aware. Expect different (typically worse) resolution rates under draw-3.~~ **Wrong.** The solver reads nothing from `Rules`: it packs the position itself and models the deck as an unordered set, so it is draw-count blind and needed no changes. That model is more permissive than draw-three rather than less, so `Unwinnable` stays sound while `Winnable` becomes an overclaim — which only reaches the stats overlay, and weakens #23's guarantee under draw-three.
 
 ### Acceptance criteria
 - Fresh deal, draw repeatedly: waste tops cycle in groups of 3; after a recycle, the same groups recur in the same order; a final partial group of 1–2 draws correctly.
