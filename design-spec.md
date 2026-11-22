@@ -530,3 +530,66 @@ been guaranteed to disagree. A field they both read cannot.
 
 Read from `Board.DrawCount` and not from the setting: between a press of the toggle and a
 new game those deliberately differ.
+
+---
+
+## Spec v4, as built (#30–#33)
+
+The loss experience, the winnable-only instruments, and the hint. Four changes, all merged
+and deployed.
+
+| | |
+| --- | --- |
+| #30 | B1 + B2 — the lost-line notice, and Back up |
+| #31 | B4 + B3 — replay, and the banner's three ways out |
+| #32 | A3 + A4 — the unvetted deal is counted, and the verdict says what it proved |
+| #33 | C — a hint the search can vouch for |
+
+### What the spec got wrong
+
+**"Back up undoes until `Version` equals the anchor."** It cannot. `Board.Undo` does
+`Version++` — the version counts *changes*, and an undo is a change — so there is no
+version to return to and that loop would never end. Undo is a pure stack, so the **undo
+depth** is the identity instead: unwind to it and the position is exactly the one that was
+proved. `Board.UndoDepth` exists for that.
+
+**A1 assumed the measurement was cheaper than the fix.** It is not, twice over. The
+instrument is a draw-aware search, which is the bulk of A2 — so "measure before fixing"
+costs about what fixing costs. And the measurement wants deals proved *dead*, which is the
+expensive half of the asymmetry #23 was built on: of sixty openings at the default budget,
+the solver proved not one unwinnable. The instrument would mostly answer "ran out of
+budget" once built.
+
+So **A1 and A2 were not done**, and A4 is the honest answer to the same problem at a
+fraction of the cost: rather than quantify the gap, say where the proof came from. The
+stats overlay reads `Winnable (draw-1)` under a draw of three, naming the model, and
+`DealVetter`'s documentation records the gap, the reasoning, and what closing it would
+take. The omission is a decision somebody can revisit, not a hole.
+
+### Deviations worth recording
+
+- **B1 and B2 shipped together**, against the stated ship order. A notice whose action does
+  not exist yet is the old verdict in a smaller font.
+- **B4 and B3 shipped together**, for the mirror reason: the banner is the only place
+  Replay is offered.
+- **`GameState.Unwinnable` is gone**, not merely bypassed. Routing a verdict through the
+  board's state ended the deal the moment it landed — counted, unplayable, and no longer
+  the player's to finish. It is a fact about the position and it lives on `Analyzer`, which
+  already published it.
+- **The banner's three buttons do not move.** They are laid out identically whatever is on
+  offer, and an unavailable one is dimmed rather than removed: geometry that shifts with
+  game state is geometry the hit test and the drawer can disagree about, which is the bug
+  #28 shipped. Dimming is not an exception to the rule that an unoffered button is not
+  pressable — the press is still refused.
+- **The hint plays candidates on a `Board` of its own**, not a bare `Position`, because
+  playing a move means turning over whatever it uncovered and that rule lives in
+  `Board.MakeMove`. `DESIGN.md` says there is no second copy of it; this does not become
+  one.
+- **The phone overlap** listed under cross-cutting polish was fixed separately, in #29,
+  before this spec was started.
+
+### What is still open
+
+- A1/A2, above, if the number is ever wanted enough to pay for it.
+- The deal's order is retained now, so numbered or shareable deals are nearly free. Still
+  nobody has asked; still noted only so the omission stays a decision.
