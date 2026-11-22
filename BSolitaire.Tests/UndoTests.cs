@@ -184,6 +184,47 @@ public class UndoTests
         Assert.False(game.CanUndo);
     }
 
+    [Fact]
+    public void ADrawOfThreeCanBeTakenBack()
+    {
+        // Snapshot undo is what makes this free, but only while every piece of state a move
+        // touches is in the snapshot — and a draw of three turns three cards over.
+        var board = Empty();
+        board.Reset(null, 3);
+        board.Position.Strip();
+        board.Position.Place(Stock, Down(Suit.Hearts, Rank.Two));
+        board.Position.Place(Stock, Down(Suit.Spades, Rank.Three));
+        board.Position.Place(Stock, Down(Suit.Clubs, Rank.Four));
+
+        board.DealFromStock();
+        board.Undo();
+
+        Assert.Equal(3, board.Position.FaceDownPile.Count);
+        Assert.Empty(board.Position.FaceUpPile);
+        Assert.All(board.Position.FaceDownPile, card => Assert.False(card.IsFaceUp));
+        Assert.Equal(Rank.Two, board.Position.FaceDownPile[0].Rank);
+        Assert.Equal(Rank.Three, board.Position.FaceDownPile[1].Rank);
+        Assert.Equal(Rank.Four, board.Position.FaceDownPile[2].Rank);
+    }
+
+    [Fact]
+    public void ADrawOfOneCanBeTakenBackToo()
+    {
+        // There was no test for this at all, which is how the draw of three nearly went in
+        // without one either.
+        var board = Empty();
+        board.Position.Place(Stock, Down(Suit.Hearts, Rank.Two));
+
+        board.DealFromStock();
+        Assert.True(board.Position.FaceUpPile[0].IsFaceUp);
+
+        board.Undo();
+
+        Assert.Single(board.Position.FaceDownPile);
+        Assert.Empty(board.Position.FaceUpPile);
+        Assert.False(board.Position.FaceDownPile[0].IsFaceUp);
+    }
+
     private static void ClearBoard(Board board)
     {
         board.Position.Strip();

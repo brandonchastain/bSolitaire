@@ -365,6 +365,31 @@ public class PiecesTests
         Assert.False(scores.Score.ShowStats);
     }
 
+    [Fact]
+    public void TheDrawSurvivesBeingStoredAndLoaded()
+    {
+        // CopyFrom is field by field and its own comment records that a field was forgotten
+        // there once. This is the field after that one.
+        var scores = new ScoreKeeper(new Board());
+        scores.ToggleDrawMode();
+
+        var reloaded = new ScoreKeeper(new Board());
+
+        Assert.True(reloaded.Load(scores.ToJson()));
+        Assert.Equal(DrawMode.DrawOne, reloaded.Score.DrawMode);
+    }
+
+    [Fact]
+    public void ARecordFromBeforeTheSettingExistedDealsThree()
+    {
+        // Three is how the game plays now, so a record saved before there was a choice gets
+        // the same game as a record saved after it.
+        var scores = new ScoreKeeper(new Board());
+
+        Assert.True(scores.Load("{\"Nickname\":\"Ada\",\"Games\":2}"));
+        Assert.Equal(DrawMode.DrawThree, scores.Score.DrawMode);
+    }
+
     // -- DealVetter -------------------------------------------------------------------
 
     [Fact]

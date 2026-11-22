@@ -36,6 +36,8 @@ internal interface ISolitaireView
 
     bool ShowStats { get; }
 
+    bool DrawThree { get; }
+
     bool Muted { get; }
 
     PlayerScore Score { get; }

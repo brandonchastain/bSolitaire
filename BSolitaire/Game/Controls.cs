@@ -12,6 +12,7 @@ internal enum PlayerCommand
     Undo,
     ToggleMute,
     ToggleStats,
+    ToggleDrawMode,
     NewGame
 }
 
@@ -78,6 +79,12 @@ internal sealed class Controls
 
         // The mute toggle sits in the gap column, where no pile ever is, so it only has to
         // take the press ahead of the felt. Same swallowed release as the button above.
+        if (layout.DrawModeButton.Contains(x, y))
+        {
+            pressConsumed = true;
+            return PlayerCommand.ToggleDrawMode;
+        }
+
         if (layout.MuteButton.Contains(x, y))
         {
             pressConsumed = true;
@@ -136,6 +143,7 @@ internal sealed class Controls
         "KeyF" => PlayerCommand.ToggleStats,
         "KeyR" => PlayerCommand.NewGame,
         "KeyM" => PlayerCommand.ToggleMute,
+        "KeyD" => PlayerCommand.ToggleDrawMode,
         "KeyZ" or "Backspace" => PlayerCommand.Undo,
         "Space" or "Enter" => PlayerCommand.FastForward,
         _ => PlayerCommand.None

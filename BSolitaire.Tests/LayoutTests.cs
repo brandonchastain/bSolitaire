@@ -22,6 +22,126 @@ public class LayoutTests
 
     [Theory]
     [MemberData(nameof(Viewports))]
+    public void TheWasteFansItsLastThreeCards(double width, double height)
+    {
+        var layout = new BoardLayout(width, height);
+
+        var first = layout.CardRect(Waste, 2, 5);
+        var second = layout.CardRect(Waste, 3, 5);
+        var third = layout.CardRect(Waste, 4, 5);
+
+        // Three places, left to right, the newest card last.
+        Assert.True(second.X > first.X, "the second card does not step right of the first");
+        Assert.True(third.X > second.X, "the third card does not step right of the second");
+        Assert.Equal(first.Y, third.Y, 3);
+
+        // Anything buried deeper than the fan shows shares the first place; it is never drawn.
+        Assert.Equal(first.X, layout.CardRect(Waste, 0, 5).X, 3);
+        Assert.Equal(first.X, layout.CardRect(Waste, 1, 5).X, 3);
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void AShortWasteStartsAtItsOwnSlot(double width, double height)
+    {
+        // One card sits where the empty slot is rather than out at the end of a fan that is
+        // not there, and the slot is where a card in flight is heading.
+        var layout = new BoardLayout(width, height);
+
+        Assert.Equal(layout.EmptySlot(Waste).X, layout.CardRect(Waste, 0, 1).X, 3);
+        Assert.Equal(layout.EmptySlot(Waste).X, layout.CardRect(Waste, 0, 2).X, 3);
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void TheWasteFanNeverReachesTheFoundations(double width, double height)
+    {
+        // The fan grows into the gap the top row leaves at column 2. It may use that gap; it
+        // may not take a bite out of the first foundation, at any card size.
+        var layout = new BoardLayout(width, height);
+
+        var furthest = layout.CardRect(Waste, 2, 3);
+        var foundation = layout.CardRect(Foundation(0), 0);
+
+        Assert.True(
+            furthest.X + furthest.W <= foundation.X + 0.001,
+            $"the waste fan reaches {furthest.X + furthest.W:F1}, the first foundation starts at {foundation.X:F1}");
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void AFannedWasteCardIsWhereTheLayoutPutIt(double width, double height)
+    {
+        // The same round trip as a tableau column: only the top card is liftable, but the
+        // hit test still has to agree with the drawer about where that card is.
+        var board = Empty();
+        var layout = new BoardLayout(width, height);
+
+        board.Position.Place(Waste, Up(Suit.Hearts, Rank.Two));
+        board.Position.Place(Waste, Up(Suit.Spades, Rank.Three));
+        board.Position.Place(Waste, Up(Suit.Clubs, Rank.Four));
+
+        var top = layout.CardRect(Waste, 2, 3);
+
+        Assert.True(
+            layout.TryHitTest(board.Position, top.X + top.W / 2, top.Y + top.H / 2, out var loc, out int index),
+            "nothing was found at the top waste card");
+
+        Assert.Equal(Waste, loc);
+        Assert.Equal(2, index);
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void TheWasteRegionCoversItsWholeFan(double width, double height)
+    {
+        // The region is cleared and repainted on its own. One that stopped at the slot would
+        // wipe the top card and leave the two behind it stranded on the felt.
+        var layout = new BoardLayout(width, height);
+        var region = layout.PileRegion(Waste);
+
+        for (int index = 0; index < 3; index++)
+        {
+            var card = layout.CardRect(Waste, index, 3);
+
+            Assert.True(card.X >= region.X - 0.001, $"card {index} starts left of its region");
+            Assert.True(
+                card.X + card.W <= region.X + region.W + 0.001,
+                $"card {index} runs past the right of its region");
+        }
+    }
+
+    [Fact]
+    public void TheWasteFanNeverJumpsAsTheWindowChanges()
+    {
+        var layout = new BoardLayout(300, 900);
+        double previous = layout.WasteFanOffset;
+
+        for (double width = 305; width <= 1600; width += 5)
+        {
+            layout.Resize(width, 900);
+
+            Assert.True(
+                Math.Abs(layout.WasteFanOffset - previous) < layout.CardWidth * 0.05,
+                $"the waste fan jumped from {previous:F2} to {layout.WasteFanOffset:F2} at width {width}");
+
+            previous = layout.WasteFanOffset;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
+    public void TheThreeCornerButtonsDoNotOverlapOrLeaveTheBoard(double width, double height)
+    {
+        var layout = new BoardLayout(width, height);
+
+        Assert.True(layout.DrawModeButton.X + layout.DrawModeButton.W <= layout.UndoButton.X + 0.001);
+        Assert.True(layout.UndoButton.X + layout.UndoButton.W <= layout.MuteButton.X + 0.001);
+        Assert.True(layout.DrawModeButton.X >= 0, $"the draw toggle starts at {layout.DrawModeButton.X:F1}");
+    }
+
+    [Theory]
+    [MemberData(nameof(Viewports))]
     public void EveryCardCanBeFoundWhereTheLayoutPutIt(double width, double height)
     {
         // The round trip that matters: ask where a card is, press there, and get that same

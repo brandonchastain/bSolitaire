@@ -279,6 +279,91 @@ public class BoardTests
         Assert.Contains(Foundation(0), board.DirtyPiles);
     }
 
+
+    [Fact]
+    public void ADrawOfThreeTurnsThreeCardsOverTogether()
+    {
+        var board = Empty();
+        board.Reset(null, 3);
+        board.Position.Strip();
+        board.Position.Place(Stock, Down(Suit.Hearts, Rank.Two));
+        board.Position.Place(Stock, Down(Suit.Spades, Rank.Three));
+        board.Position.Place(Stock, Down(Suit.Clubs, Rank.Four));
+
+        Assert.True(board.DealFromStock());
+
+        Assert.Empty(board.Position.FaceDownPile);
+        Assert.Equal(3, board.Position.FaceUpPile.Count);
+
+        // All three, not just the one on top: the other two are shown in the waste's fan.
+        Assert.All(board.Position.FaceUpPile, card => Assert.True(card.IsFaceUp));
+
+        // The packet is turned over on the way, so the card showing is the one that was
+        // deepest in it — the two off the top of the stock end up behind it.
+        Assert.Equal(Rank.Two, board.Position.FaceUpPile[^1].Rank);
+    }
+
+    [Fact]
+    public void ADrawOfThreeTakesWhatIsLeftWhenTheStockIsShort()
+    {
+        var board = Empty();
+        board.Reset(null, 3);
+        board.Position.Strip();
+        board.Position.Place(Stock, Down(Suit.Hearts, Rank.Two));
+        board.Position.Place(Stock, Down(Suit.Spades, Rank.Three));
+
+        Assert.True(board.DealFromStock());
+
+        Assert.Empty(board.Position.FaceDownPile);
+        Assert.Equal(2, board.Position.FaceUpPile.Count);
+        Assert.All(board.Position.FaceUpPile, card => Assert.True(card.IsFaceUp));
+    }
+
+    [Fact]
+    public void ADealStillTurnsOneCardWhenThatIsTheGameBeingPlayed()
+    {
+        var board = Empty();
+        board.Reset(null, 1);
+        board.Position.Strip();
+        board.Position.Place(Stock, Down(Suit.Hearts, Rank.Two));
+        board.Position.Place(Stock, Down(Suit.Spades, Rank.Three));
+
+        Assert.True(board.DealFromStock());
+
+        Assert.Single(board.Position.FaceUpPile);
+        Assert.Equal(Rank.Three, board.Position.FaceUpPile[0].Rank);
+    }
+
+    [Fact]
+    public void TurningTheWasteBackOverDealsTheSameGroupsAgain()
+    {
+        var board = Empty();
+        board.Reset(null, 3);
+        board.Position.Strip();
+
+        foreach (var rank in new[] { Rank.Two, Rank.Three, Rank.Four, Rank.Five, Rank.Six, Rank.Seven })
+        {
+            board.Position.Place(Stock, Down(Suit.Hearts, rank));
+        }
+
+        var firstPass = new List<Rank>();
+
+        while (board.DealFromStock())
+        {
+            firstPass.Add(board.Position.FaceUpPile[^1].Rank);
+        }
+
+        Assert.True(board.RecycleWaste());
+
+        var secondPass = new List<Rank>();
+
+        while (board.DealFromStock())
+        {
+            secondPass.Add(board.Position.FaceUpPile[^1].Rank);
+        }
+
+        Assert.Equal(firstPass, secondPass);
+    }
     [Fact]
     public void AShuffleIsAWholeDeckWithNothingRepeated()
     {

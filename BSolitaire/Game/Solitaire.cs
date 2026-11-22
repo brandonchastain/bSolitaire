@@ -132,6 +132,10 @@ internal sealed class Solitaire : ISolitaireView
     /// score.</summary>
     public bool ShowStats => Score.ShowStats;
 
+    /// <summary>Whether the stock turns three cards over at a time. The setting, not the
+    /// deal in progress — this is what the button on the felt has to show.</summary>
+    public bool DrawThree => Score.DrawMode == DrawMode.DrawThree;
+
     /// <summary>
     /// Noises the board has asked for since the host last drained them. Nothing here makes a
     /// sound; the host plays them and calls <see cref="ClearSounds"/>.
@@ -315,7 +319,7 @@ internal sealed class Solitaire : ISolitaireView
         fastForward.Stop();
         cascade.Stop();
         animator.Clear();
-        Guarded(() => Board.Reset(vetter.TakeDeal()));
+        Guarded(() => Board.Reset(vetter.TakeDeal(), DrawThree ? 3 : 1));
     }
 
     /// <summary>
@@ -388,6 +392,13 @@ internal sealed class Solitaire : ISolitaireView
 
             case PlayerCommand.ToggleStats:
                 scores.ToggleStats();
+                break;
+
+            case PlayerCommand.ToggleDrawMode:
+                // Takes effect on the next deal. Changing what the stock does under a player
+                // who has already started turning it would be changing the game they are
+                // playing, and the deal they are on keeps the rules it was dealt with.
+                scores.ToggleDrawMode();
                 break;
 
             case PlayerCommand.Undo:
