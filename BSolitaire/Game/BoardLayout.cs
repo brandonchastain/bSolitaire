@@ -5,6 +5,17 @@ internal readonly record struct Rect(double X, double Y, double W, double H)
     public bool Contains(double x, double y) => x >= X && x < X + W && y >= Y && y < Y + H;
 }
 
+/// <summary>Where each thing along the bottom edge goes, worked out together so that no
+/// two of them can be given the same pixels. Characters rather than widths, because the
+/// band is drawn in a monospace font and the canvas cannot be asked to measure text
+/// without stalling the batch it is in the middle of.</summary>
+internal readonly record struct BottomRow(
+    double ClockX,
+    double ScoreRightX,
+    double StatsX,
+    double StatsRoom,
+    double TextY);
+
 /// <summary>
 /// Handles board geometry and layout.
 /// </summary>
@@ -45,14 +56,6 @@ internal sealed class BoardLayout
 
     private const int TableauColumns = 7;
 
-    /// <summary>
-    /// How many of the waste's cards are shown. Three, because that is what a draw of three
-    /// turns over: the player needs to see what is under the top card, since in draw-three
-    /// those are the cards one play away from being reachable. A draw of one never has more
-    /// than one to show and so never notices.
-    /// </summary>
-    private const int WasteFanCards = 3;
-
     /// <summary>How many fanned cards a tableau column tries to show without running off
     /// the bottom. Longer columns exist but are rare enough not to drive the layout.</summary>
     private const int FannedCardsToFit = 13;
@@ -60,6 +63,32 @@ internal sealed class BoardLayout
     /// <summary>Where a full pip layout stops being worth printing: below this a pip is
     /// under four and a half pixels across.</summary>
     private const double SmallCardWidth = 64;
+
+    /// <summary>The most cards the waste will ever show. Three is what a draw of three
+    /// turns over, and the fan has to fit beside the foundations at any card size.</summary>
+    private const int MostWasteFanCards = 3;
+
+    /// <summary>The clear strip along the bottom edge that the text lives in. The corner
+    /// buttons and the finish offer are both positioned against it, so nothing is ever
+    /// drawn across the line.</summary>
+    private const double BottomBandHeight = 26;
+
+    private const double BottomTextPx = 14;
+
+    private const double BottomPad = 8;
+
+    /// <summary>
+    /// How wide a character is, as a fraction of the font size, in the monospace the bottom
+    /// band is drawn in. An upper bound rather than a measurement: Menlo and DejaVu Sans
+    /// Mono are both .602 and Consolas is .55, and the canvas can only be asked to measure
+    /// text by stalling the batch it is in the middle of — three times a frame, to save
+    /// nothing. Being generous is the safe direction: it makes the band give up on the
+    /// diagnostics line slightly early rather than slightly late.
+    /// </summary>
+    private const double MonospaceAdvance = 0.62;
+
+    /// <summary>Clear characters between two things sharing the band.</summary>
+    private const double BottomGapChars = 2;
 
     /// <summary>Piles that can be dropped onto. The stock and waste are never drop targets.</summary>
     private static readonly PileKind[] DropTargetKinds = [PileKind.Tableau, PileKind.Foundation];
@@ -107,6 +136,25 @@ internal sealed class BoardLayout
 
     /// <summary>Vertical gap between consecutive cards in a fanned tableau pile.</summary>
     public double FanOffset { get; private set; }
+
+    /// <summary>
+    /// How many of the waste's cards are shown. The deal's draw count, so a draw of one
+    /// stacks its waste in a single slot and a draw of three fans what it turned over.
+    /// State rather than a constant because both the drawer and the hit test read it, and
+    /// they must never disagree about where a card is — a parameter only the drawer could
+    /// supply would guarantee they do.
+    /// </summary>
+    public int WasteFanCards { get; private set; } = MostWasteFanCards;
+
+    /// <summary>The strip along the bottom the text is drawn in, clear of everything.</summary>
+    public Rect BottomBand { get; private set; }
+
+    /// <summary>The middle of the bottom text, which is what the canvas is told, since the
+    /// drawer sets a middle baseline once per pass.</summary>
+    public double BottomTextY { get; private set; }
+
+    /// <summary>How wide one character of the bottom band's font is.</summary>
+    public double GlyphWidth { get; private set; }
 
     /// <summary>Horizontal gap between consecutive cards in the waste's fan. Its own
     /// property rather than a reuse of <see cref="FanOffset"/>, which is a vertical measure
@@ -198,8 +246,16 @@ internal sealed class BoardLayout
         // and a three-card fan spends two offsets of it — so half that is the most an offset
         // may be before the fan reaches the foundations. It almost never binds; it is there
         // so that no card size can make the fan collide rather than merely look tight.
-        double fanRoom = (CardWidth + 2 * gutter) / (WasteFanCards - 1);
-        WasteFanOffset = Math.Min(CardWidth * Blend(0.30, 0.24), fanRoom * 0.9);
+        // A fan of one has no offset — every card shares the slot — and the room each of
+        // the others gets would be a division by zero without the floor.
+        double fanRoom = (CardWidth + 2 * gutter) / Math.Max(1, WasteFanCards - 1);
+        WasteFanOffset = WasteFanCards <= 1
+            ? 0
+            : Math.Min(CardWidth * Blend(0.30, 0.24), fanRoom * 0.9);
+
+        BottomBand = new Rect(0, height - BottomBandHeight, width, BottomBandHeight);
+        BottomTextY = height - (BottomBandHeight / 2);
+        GlyphWidth = BottomTextPx * MonospaceAdvance;
 
         // Sized off the card rather than the viewport, so the panel and its text keep the
         // same proportions as everything else on the position.
@@ -225,7 +281,7 @@ internal sealed class BoardLayout
         double muteSize = Math.Max(CardWidth * 0.42, Compact ? 36 : 0);
         MuteButton = new Rect(
             width - muteSize - margin,
-            height - muteSize - 26,
+            height - muteSize - BottomBandHeight,
             muteSize,
             muteSize);
 
@@ -238,7 +294,22 @@ internal sealed class BoardLayout
 
         double ffW = Math.Min(width - 2 * gutter, CardWidth * 2.8);
         double ffH = CardHeight * 0.42;
-        FastForwardButton = new Rect((width - ffW) / 2, height - ffH - gutter * 2, ffW, ffH);
+        double ffX = (width - ffW) / 2;
+
+        // Clear of the text, whatever the gutter has collapsed to. On a narrow board two
+        // gutters is a few pixels, and the offer was being painted straight across the
+        // score line and the clock.
+        double ffY = height - ffH - Math.Max(gutter * 2, BottomBandHeight);
+
+        // And clear of the corner buttons, which a centred offer reaches once the board is
+        // narrow enough. Controls.Down tests this rect first, so a corner button it covers
+        // is a button that cannot be pressed while the offer stands.
+        if (ffX + ffW > DrawModeButton.X && ffY + ffH > MuteButton.Y)
+        {
+            ffY = MuteButton.Y - ffH - gutter;
+        }
+
+        FastForwardButton = new Rect(ffX, ffY, ffW, ffH);
     }
 
     /// <param name="pileCount">
@@ -248,6 +319,43 @@ internal sealed class BoardLayout
     /// as the only card in its pile, which is where an empty slot and a card in flight both
     /// want to be.
     /// </param>
+    /// <summary>
+    /// Says how many of the waste's cards this deal shows, which is how many it turns over.
+    /// Belongs with a deal: a change arrives with <see cref="Board.Reset"/>, which repaints
+    /// the whole board, and calling it at any other moment would leave the old fan's cards
+    /// on the felt with nothing to clear them.
+    /// </summary>
+    public void SetWasteFan(int cardsPerDraw)
+    {
+        WasteFanCards = Math.Clamp(cardsPerDraw, 1, MostWasteFanCards);
+
+        // The fan's offset is worked out from the number of places, so it has to be worked
+        // out again. Resize only assigns this object's own properties.
+        Resize(Width, Height);
+    }
+
+    /// <summary>
+    /// Where the three things along the bottom edge go: the clock on the left, the player's
+    /// tallies on the right, and the diagnostics overlay in whatever is left between them.
+    /// Both the drawer and the tests ask this, so what is drawn and what is asserted cannot
+    /// come apart.
+    /// </summary>
+    /// <param name="clockChars">Characters the clock will take.</param>
+    /// <param name="scoreChars">Characters the tallies will take.</param>
+    public BottomRow BottomRowFor(int clockChars, int scoreChars)
+    {
+        double clockX = BottomPad;
+        double statsX = clockX + ((clockChars + BottomGapChars) * GlyphWidth);
+        double scoreLeft = Width - BottomPad - (scoreChars * GlyphWidth);
+
+        return new BottomRow(
+            clockX,
+            Width - BottomPad,
+            statsX,
+            scoreLeft - (BottomGapChars * GlyphWidth) - statsX,
+            BottomTextY);
+    }
+
     public Rect CardRect(Location loc, int indexInPile, int pileCount = 1)
     {
         return loc.Kind switch
@@ -376,26 +484,26 @@ internal sealed class BoardLayout
         return false;
     }
 
-    /// <summary>
-    /// Which of the fan's places a waste card stands in, counting from the left. The fan is
-    /// anchored at the end of the pile: the top card takes the last place the pile is long
-    /// enough to fill, and the cards behind it step back towards the slot. Anything buried
-    /// deeper than the fan shows shares the first place, since it is never drawn.
-    /// </summary>
-    private static int WasteFanSlot(int indexInPile, int pileCount)
-    {
-        int places = Math.Clamp(pileCount, 1, WasteFanCards);
-        int fromTop = Math.Max(0, pileCount - 1 - indexInPile);
-
-        return Math.Clamp(places - 1 - fromTop, 0, WasteFanCards - 1);
-    }
-
     /// <summary>A smooth 0-to-1 ramp between two widths, flat at both ends. Flat matters: a
     /// linear ramp still changes the layout's mind abruptly at each end of the range.</summary>
     private static double Smoothstep(double value, double from, double to)
     {
         double t = Math.Clamp((value - from) / (to - from), 0, 1);
         return t * t * (3 - 2 * t);
+    }
+
+    /// <summary>
+    /// Which of the fan's places a waste card stands in, counting from the left. The fan is
+    /// anchored at the end of the pile: the top card takes the last place the pile is long
+    /// enough to fill, and the cards behind it step back towards the slot. Anything buried
+    /// deeper than the fan shows shares the first place, since it is never drawn.
+    /// </summary>
+    private int WasteFanSlot(int indexInPile, int pileCount)
+    {
+        int places = Math.Clamp(pileCount, 1, WasteFanCards);
+        int fromTop = Math.Max(0, pileCount - 1 - indexInPile);
+
+        return Math.Clamp(places - 1 - fromTop, 0, WasteFanCards - 1);
     }
 
     /// <summary>The phone value or the window value, or wherever between them this board

@@ -49,10 +49,16 @@ internal sealed class PlayerScore
     [JsonIgnore]
     public long? AverageWinSeconds => TimedWins > 0 ? TotalWinSeconds / TimedWins : null;
 
+    /// <summary>The numbers, without the name. What the board falls back to when the whole
+    /// line will not fit across the bottom of it — the name is the longest part and the only
+    /// part the player already knows.</summary>
+    [JsonIgnore]
+    public string Tallies => $"Games: {Games}   Wins: {Wins}";
+
     /// <summary>The line drawn on the board. A player with no nickname yet is still a player.</summary>
     [JsonIgnore]
     public string Summary =>
-        $"{(string.IsNullOrWhiteSpace(Nickname) ? "Player" : Nickname)}   Games: {Games}   Wins: {Wins}";
+        $"{(string.IsNullOrWhiteSpace(Nickname) ? "Player" : Nickname)}   {Tallies}";
 
     /// <summary>
     /// Takes on everything a stored record holds. The game keeps one score object for its

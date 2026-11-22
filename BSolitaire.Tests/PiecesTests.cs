@@ -408,6 +408,25 @@ public class PiecesTests
     }
 
     [Fact]
+    public void TheRecordCanBeShownWithoutTheName()
+    {
+        // The name is the longest part of the line and the part the player already knows,
+        // so it is what goes when the bottom of the board runs out of room.
+        var score = new PlayerScore { Nickname = "Brandon", Games = 1204, Wins = 187 };
+
+        Assert.Contains("Brandon", score.Summary);
+        Assert.DoesNotContain("Brandon", score.Tallies);
+        Assert.Contains("Games: 1204", score.Tallies);
+        Assert.Contains("Wins: 187", score.Tallies);
+        Assert.EndsWith(score.Tallies, score.Summary);
+
+        // Neither is part of the record itself.
+        string json = JsonSerializer.Serialize(score);
+        Assert.DoesNotContain("Summary", json);
+        Assert.DoesNotContain("Tallies", json);
+    }
+
+    [Fact]
     public void ARecordFromAnOlderVersionKeepsWhatItHas()
     {
         var scores = new ScoreKeeper(new Board());
@@ -582,6 +601,81 @@ public class PiecesTests
 
         Assert.Equal(1, scores.Score.TimedGames);
         Assert.Equal(1, scores.Score.TimedWins);
+    }
+
+    [Fact]
+    public void TheRunningClockCountsOnlyTimePlayed()
+    {
+        var board = new Board();
+        var scores = new ScoreKeeper(board);
+        double now = 0;
+
+        scores.Tick(now);
+        Assert.Equal(0, scores.ElapsedSeconds);
+
+        // A board nobody has touched is not a board being played.
+        Play(scores, ref now, seconds: 2);
+        Assert.Equal(0, scores.ElapsedSeconds);
+
+        board.DealFromStock();
+        Play(scores, ref now, seconds: 2);
+        Assert.Equal(2, scores.ElapsedSeconds);
+
+        // A minute with the tab elsewhere arrives as one enormous gap and counts for none
+        // of it.
+        now += 60_000;
+        scores.Tick(now);
+        Assert.Equal(2, scores.ElapsedSeconds);
+
+        Play(scores, ref now, seconds: 1);
+        Assert.Equal(3, scores.ElapsedSeconds);
+    }
+
+    [Fact]
+    public void TheRunningClockStopsWhenTheDealDoes()
+    {
+        var board = FourKingsFromDone();
+        var scores = new ScoreKeeper(board);
+        double now = 0;
+
+        scores.Tick(now);
+        board.FastForwardStep();
+        Play(scores, ref now, seconds: 1);
+
+        while (board.State == GameState.Playing)
+        {
+            board.FastForwardStep();
+        }
+
+        long atTheEnd = scores.ElapsedSeconds;
+        Play(scores, ref now, seconds: 3);
+
+        Assert.Equal(atTheEnd, scores.ElapsedSeconds);
+    }
+
+    [Fact]
+    public void TheClockOnTheBoardAgreesWithTheOneInTheRecord()
+    {
+        // Both floor. A deal the player watched reach 2:05 must not be recorded as 2:06.
+        var board = new Board();
+        var scores = new ScoreKeeper(board);
+        double now = 0;
+
+        scores.Tick(now);
+        board.DealFromStock();
+        Play(scores, ref now, seconds: 2);
+
+        // Most of another second, which neither of them should round up.
+        for (int frame = 0; frame < 115; frame++)
+        {
+            now += 8;
+            scores.Tick(now);
+        }
+
+        long onTheBoard = scores.ElapsedSeconds;
+
+        Assert.True(scores.Abandon());
+        Assert.Equal(onTheBoard, scores.Score.TotalGameSeconds);
     }
 
     // -- DealVetter -------------------------------------------------------------------
