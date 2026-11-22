@@ -1,3 +1,4 @@
+using System.Text;
 using BSolitaire.Game;
 using Xunit;
 using static BSolitaire.Tests.Positions;
@@ -276,6 +277,67 @@ public class BoardTests
 
         Assert.Contains(Tableau(0), board.DirtyPiles);
         Assert.Contains(Foundation(0), board.DirtyPiles);
+    }
+
+    [Fact]
+    public void AShuffleIsAWholeDeckWithNothingRepeated()
+    {
+        var order = Dealer.Shuffle();
+
+        Assert.Equal(52, order.Length);
+        Assert.Equal(52, new HashSet<(Suit Suit, Rank Rank)>(order).Count);
+    }
+
+    [Fact]
+    public void TheSameDeckAlwaysDealsTheSamePosition()
+    {
+        // What lets a deal be decided on before it is played. The vetter proves a win in a
+        // deck order and hands over the order rather than the position, so dealing that
+        // order again has to produce exactly the position the win was proved in.
+        var order = Dealer.Shuffle();
+
+        var first = new Board();
+        first.Reset(order);
+
+        var second = new Board();
+        second.Reset(order);
+
+        Assert.Equal(Spell(first), Spell(second));
+    }
+
+    [Fact]
+    public void TwoDealsOfOneDeckShareNoCards()
+    {
+        // Cards are mutable and a deal turns seven of them over. Were the two deals handed
+        // the same fifty-two objects, turning a card up in one would turn it up in the other.
+        var order = Dealer.Shuffle();
+
+        var first = new Board();
+        first.Reset(order);
+
+        var second = new Board();
+        second.Reset(order);
+
+        Assert.NotSame(first.Position.TableauPiles[0][0], second.Position.TableauPiles[0][0]);
+    }
+
+    /// <summary>A whole position as one string, so two of them can be compared at a glance —
+    /// every pile in order, every card's suit, rank, and which way up it is.</summary>
+    private static string Spell(Board board)
+    {
+        var text = new StringBuilder();
+
+        foreach (var pile in AllPiles(board))
+        {
+            foreach (var card in pile)
+            {
+                text.Append(card.Suit).Append(card.Rank).Append(card.IsFaceUp ? '^' : 'v').Append(' ');
+            }
+
+            text.Append('|');
+        }
+
+        return text.ToString();
     }
 
     private static IEnumerable<IReadOnlyList<Card>> AllPiles(Board board)

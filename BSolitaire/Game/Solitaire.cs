@@ -19,6 +19,7 @@ internal sealed class Solitaire : ISolitaireView
 {
     private readonly Controls controls;
     private readonly Analyzer analyzer;
+    private readonly DealVetter vetter;
     private readonly FastForward fastForward;
     private readonly ScoreKeeper scores;
     private readonly Animator animator;
@@ -35,6 +36,7 @@ internal sealed class Solitaire : ISolitaireView
         Layout = new BoardLayout(800, 600);
         controls = new Controls(Board, Layout);
         analyzer = new Analyzer(Board);
+        vetter = new DealVetter();
         fastForward = new FastForward(Board);
         scores = new ScoreKeeper(Board);
         animator = new Animator(Board, Layout);
@@ -205,10 +207,24 @@ internal sealed class Solitaire : ISolitaireView
             NeedsRedraw = true;
         }
 
-        if (analyzer.Update(paused: Drag != null || fastForward.IsRunning || animator.Busy || cascade.IsRunning))
+        bool busy = Drag != null || fastForward.IsRunning || animator.Busy || cascade.IsRunning;
+
+        if (analyzer.Update(paused: busy))
         {
             NeedsRedraw = true;
         }
+
+        // Two searches want this frame and only one may have it: they share a thread, and a
+        // slice each would be twice the budget the slice was sized for. The position the
+        // player is looking at goes first, and finding the next deal gets what is left —
+        // which is nearly every frame, because a vetted deal is one the search settles in
+        // its first slice, and a game lasts minutes.
+        //
+        // Being crowded out costs correctness nothing. A deal asked for before one is ready
+        // is searched for there and then, so what this buys is only the wait, never the
+        // vetting itself. Finding a deal changes nothing on screen, so it never asks for a
+        // redraw either.
+        vetter.Update(paused: busy || !analyzer.Done);
     }
 
     /// <param name="touch">True for a finger or a pen rather than a mouse.</param>
@@ -277,13 +293,29 @@ internal sealed class Solitaire : ISolitaireView
     /// <inheritdoc cref="ScoreKeeper.Load"/>
     public bool LoadScore(string json) => scores.Load(json);
 
+    /// <summary>
+    /// Deals the first game of a session. Called once by the host before the first frame,
+    /// rather than done in the constructor, because vetting a deal is real work and a session
+    /// built only to have a position arranged on it — every test in the suite — has no use
+    /// for a deal it is about to throw away.
+    /// </summary>
+    public void Begin()
+    {
+        // The board dealt itself when it was built, before there was a vetted deal to give
+        // it. That deal is replaced here, and it was never seen: its noise and its
+        // twenty-eight flying cards go with it rather than landing on the real one.
+        Board.ClearSounds();
+        Board.ClearMotions();
+        Reset();
+    }
+
     /// <summary>Abandons the current game and deals a new one.</summary>
     public void Reset()
     {
         fastForward.Stop();
         cascade.Stop();
         animator.Clear();
-        Guarded(Board.Reset);
+        Guarded(() => Board.Reset(vetter.TakeDeal()));
     }
 
     /// <summary>

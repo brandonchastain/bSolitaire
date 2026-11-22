@@ -6,9 +6,10 @@ using static BSolitaire.Tests.Positions;
 namespace BSolitaire.Tests;
 
 /// <summary>
-/// The three pieces the session hands a slice of each frame to, asked directly. Going through
+/// The pieces the session hands a slice of each frame to, asked directly. Going through
 /// <see cref="Solitaire"/> covers how they fit together; this covers the corners that are hard
-/// to reach from there — a stalled finish, a search told to stand down, a deal counted twice.
+/// to reach from there — a stalled finish, a search told to stand down, a deal counted twice,
+/// a deal thrown away before anyone saw it.
 /// </summary>
 public class PiecesTests
 {
@@ -362,5 +363,95 @@ public class PiecesTests
         Assert.Equal("Ada", scores.Score.Nickname);
         Assert.Equal(2, scores.Score.Games);
         Assert.False(scores.Score.ShowStats);
+    }
+
+    // -- DealVetter -------------------------------------------------------------------
+
+    [Fact]
+    public void AVettedDealIsOneWithAWinInIt()
+    {
+        // The whole promise of the thing: what it hands over has been proved winnable, not
+        // merely not-yet-proved-lost.
+        var vetter = new DealVetter();
+
+        for (int frame = 0; frame < 4000 && !vetter.HasDeal; frame++)
+        {
+            vetter.Update(paused: false);
+        }
+
+        Assert.True(vetter.HasDeal, "no deal was vetted in four thousand frames");
+
+        var deal = vetter.TakeDeal();
+        Assert.NotNull(deal);
+
+        var board = new Board();
+        board.Reset(deal);
+
+        Assert.Equal(SolveResult.Winnable, Solve(board));
+    }
+
+    [Fact]
+    public void ADealAskedForBeforeOneIsReadyIsStillAWinnableOne()
+    {
+        // The first deal of a session: nothing has been vetted in the background, so the
+        // search runs there and then. The wait is capped, so on slow hardware a single ask
+        // can come back empty — asking again is what a player pressing New Game would do.
+        var vetter = new DealVetter();
+        IReadOnlyList<(Suit Suit, Rank Rank)>? deal = null;
+
+        for (int attempt = 0; attempt < 10 && deal is null; attempt++)
+        {
+            deal = vetter.TakeDeal();
+        }
+
+        Assert.NotNull(deal);
+        Assert.Equal(52, deal.Count);
+
+        var board = new Board();
+        board.Reset(deal);
+
+        Assert.Equal(SolveResult.Winnable, Solve(board));
+    }
+
+    [Fact]
+    public void AVetterToldToStandDownDoesNothing()
+    {
+        var vetter = new DealVetter();
+
+        for (int frame = 0; frame < 100; frame++)
+        {
+            vetter.Update(paused: true);
+        }
+
+        Assert.False(vetter.HasDeal);
+        Assert.Equal(0, vetter.Discarded);
+    }
+
+    [Fact]
+    public void ADealIsHandedOverOnceAndThenLookedForAgain()
+    {
+        var vetter = new DealVetter();
+
+        for (int frame = 0; frame < 4000 && !vetter.HasDeal; frame++)
+        {
+            vetter.Update(paused: false);
+        }
+
+        Assert.True(vetter.HasDeal);
+        Assert.NotNull(vetter.TakeDeal());
+        Assert.False(vetter.HasDeal);
+    }
+
+    /// <summary>Runs a search to the end. Generous, because this is not a frame-budget test.</summary>
+    private static SolveResult Solve(Board board)
+    {
+        var solver = new Solver(board.Position);
+
+        while (!solver.Done)
+        {
+            solver.Step(1_000_000, TimeSpan.FromSeconds(10));
+        }
+
+        return solver.Result;
     }
 }

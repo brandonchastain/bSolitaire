@@ -74,6 +74,12 @@
             await atlasRef.CreateCanvas2DAsync(),
             atlasRef.CanvasReference);
         selfRef = DotNetObjectReference.Create(this);
+
+        // Before the loop rather than after it, so the first thing drawn is already the deal
+        // the player keeps. The board deals itself when it is built, and that one is a
+        // placeholder nobody should see.
+        game.Begin();
+
         await JS.InvokeVoidAsync("bSolitaire.start", selfRef);
 
         // After the loop is running, not before: a score that fails to load costs the
