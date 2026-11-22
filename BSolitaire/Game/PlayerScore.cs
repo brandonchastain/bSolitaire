@@ -23,6 +23,10 @@ internal sealed class PlayerScore
 
     public bool ShowStats { get; set; }
 
+    /// <summary>How many cards a turn of the stock brings over. Takes effect on the next
+    /// deal, never partway through one.</summary>
+    public DrawMode DrawMode { get; set; }
+
     /// <summary>The line drawn on the board. A player with no nickname yet is still a player.</summary>
     [JsonIgnore]
     public string Summary =>
@@ -41,5 +45,6 @@ internal sealed class PlayerScore
         Wins = other.Wins;
         Muted = other.Muted;
         ShowStats = other.ShowStats;
+        DrawMode = other.DrawMode;
     }
 }

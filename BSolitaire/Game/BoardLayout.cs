@@ -45,6 +45,14 @@ internal sealed class BoardLayout
 
     private const int TableauColumns = 7;
 
+    /// <summary>
+    /// How many of the waste's cards are shown. Three, because that is what a draw of three
+    /// turns over: the player needs to see what is under the top card, since in draw-three
+    /// those are the cards one play away from being reachable. A draw of one never has more
+    /// than one to show and so never notices.
+    /// </summary>
+    private const int WasteFanCards = 3;
+
     /// <summary>How many fanned cards a tableau column tries to show without running off
     /// the bottom. Longer columns exist but are rare enough not to drive the layout.</summary>
     private const int FannedCardsToFit = 13;
@@ -100,12 +108,21 @@ internal sealed class BoardLayout
     /// <summary>Vertical gap between consecutive cards in a fanned tableau pile.</summary>
     public double FanOffset { get; private set; }
 
+    /// <summary>Horizontal gap between consecutive cards in the waste's fan. Its own
+    /// property rather than a reuse of <see cref="FanOffset"/>, which is a vertical measure
+    /// taken off the card's height and bounded by what a thirteen-card column needs.</summary>
+    public double WasteFanOffset { get; private set; }
+
     /// <summary>The panel shown when a game is over. Drawn only then, but always positioned,
     /// so the drawer and the hit test can't disagree about where it is.</summary>
     public Rect Banner { get; private set; }
 
     /// <summary>The button inside <see cref="Banner"/> that deals a new game.</summary>
     public Rect NewGameButton { get; private set; }
+
+    /// <summary>The corner toggle between turning one card off the stock and turning three.
+    /// Third in the bottom-right row, left of the undo.</summary>
+    public Rect DrawModeButton { get; private set; }
 
     /// <summary>
     /// Takes the last move back. Sits beside the mute toggle in the bottom-right corner, in
@@ -176,6 +193,14 @@ internal sealed class BoardLayout
         // takes room nothing else was using.
         FanOffset = Math.Clamp(toFit, CardHeight * 0.12, CardHeight * Blend(0.5, 0.28));
 
+        // The waste fans sideways into the gap the top row leaves at column 2. From the
+        // waste's own slot to the first foundation there is a card's width and two gutters,
+        // and a three-card fan spends two offsets of it — so half that is the most an offset
+        // may be before the fan reaches the foundations. It almost never binds; it is there
+        // so that no card size can make the fan collide rather than merely look tight.
+        double fanRoom = (CardWidth + 2 * gutter) / (WasteFanCards - 1);
+        WasteFanOffset = Math.Min(CardWidth * Blend(0.30, 0.24), fanRoom * 0.9);
+
         // Sized off the card rather than the viewport, so the panel and its text keep the
         // same proportions as everything else on the position.
         double bannerW = Math.Min(width - 2 * gutter, CardWidth * 4.4);
@@ -203,19 +228,37 @@ internal sealed class BoardLayout
 
         UndoButton = new Rect(MuteButton.X - muteSize - gutter, MuteButton.Y, muteSize, muteSize);
 
+        // Third in the same row. A keyboard shortcut alone would do for the stats overlay,
+        // which is a developer's switch, but how many cards the stock turns over is how the
+        // game plays — and a phone has no D key to press.
+        DrawModeButton = new Rect(UndoButton.X - muteSize - gutter, MuteButton.Y, muteSize, muteSize);
+
         double ffW = Math.Min(width - 2 * gutter, CardWidth * 2.8);
         double ffH = CardHeight * 0.42;
         FastForwardButton = new Rect((width - ffW) / 2, height - ffH - gutter * 2, ffW, ffH);
     }
 
-    public Rect CardRect(Location loc, int indexInPile)
+    /// <param name="pileCount">
+    /// How many cards the pile holds. Only the waste reads it, and only because its fan is
+    /// anchored to the end of the pile rather than the start: the top card sits at the far
+    /// end of the fan however many cards are buried behind it. Left at one, a card is placed
+    /// as the only card in its pile, which is where an empty slot and a card in flight both
+    /// want to be.
+    /// </param>
+    public Rect CardRect(Location loc, int indexInPile, int pileCount = 1)
     {
         return loc.Kind switch
         {
-            // The stock and waste show only their top card, so every card in them shares
-            // one slot. Foundations stack rather than fan, same reason.
+            // The stock shows only its top card, so every card in it shares one slot, and
+            // foundations stack rather than fan for the same reason.
             PileKind.FaceDown => new Rect(ColumnX(0), topRowY, CardWidth, CardHeight),
-            PileKind.FaceUp => new Rect(ColumnX(1), topRowY, CardWidth, CardHeight),
+
+            // The waste fans sideways, newest card last and furthest right.
+            PileKind.FaceUp => new Rect(
+                ColumnX(1) + (WasteFanSlot(indexInPile, pileCount) * WasteFanOffset),
+                topRowY,
+                CardWidth,
+                CardHeight),
 
             // Foundations take the right end of the top row, leaving column 2 as a gap.
             PileKind.Foundation => new Rect(ColumnX(3 + loc.PileIndex), topRowY, CardWidth, CardHeight),
@@ -236,6 +279,10 @@ internal sealed class BoardLayout
         var slot = EmptySlot(loc);
         double bottom = loc.Kind == PileKind.Tableau ? Height : slot.Y + slot.H;
 
+        // The waste runs sideways past its slot by the whole width of its fan. Miss this and
+        // repainting the waste clears the top card and leaves the two behind it on the felt.
+        double fan = loc.Kind == PileKind.FaceUp ? (WasteFanCards - 1) * WasteFanOffset : 0;
+
         // Reach a little past the slot, because a card's edge is stroked along its boundary
         // and half that line lies outside it. Never past half a gutter, though: the region is
         // cleared and only this pile is drawn back, so a region that reached its neighbour
@@ -245,7 +292,7 @@ internal sealed class BoardLayout
         return new Rect(
             slot.X - bleed,
             slot.Y - bleed,
-            slot.W + 2 * bleed,
+            slot.W + fan + 2 * bleed,
             Math.Max(slot.H, bottom - slot.Y) + 2 * bleed);
     }
 
@@ -271,7 +318,7 @@ internal sealed class BoardLayout
 
                 // A tableau column runs to the bottom of the board; everything else
                 // covers only the span its cards actually occupy.
-                var top = pile.Count > 0 ? CardRect(location, pile.Count - 1) : slot;
+                var top = pile.Count > 0 ? CardRect(location, pile.Count - 1, pile.Count) : slot;
                 double bottom = kind == PileKind.Tableau
                     ? Math.Max(Height, top.Y + top.H)
                     : top.Y + top.H;
@@ -310,7 +357,7 @@ internal sealed class BoardLayout
 
                 for (int cardIndex = pile.Count - 1; cardIndex >= 0; cardIndex--)
                 {
-                    if (CardRect(location, cardIndex).Contains(x, y))
+                    if (CardRect(location, cardIndex, pile.Count).Contains(x, y))
                     {
                         loc = location;
                         indexInPile = cardIndex;
@@ -324,6 +371,20 @@ internal sealed class BoardLayout
         indexInPile = -1;
 
         return false;
+    }
+
+    /// <summary>
+    /// Which of the fan's places a waste card stands in, counting from the left. The fan is
+    /// anchored at the end of the pile: the top card takes the last place the pile is long
+    /// enough to fill, and the cards behind it step back towards the slot. Anything buried
+    /// deeper than the fan shows shares the first place, since it is never drawn.
+    /// </summary>
+    private static int WasteFanSlot(int indexInPile, int pileCount)
+    {
+        int places = Math.Clamp(pileCount, 1, WasteFanCards);
+        int fromTop = Math.Max(0, pileCount - 1 - indexInPile);
+
+        return Math.Clamp(places - 1 - fromTop, 0, WasteFanCards - 1);
     }
 
     /// <summary>A smooth 0-to-1 ramp between two widths, flat at both ends. Flat matters: a

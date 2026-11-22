@@ -45,6 +45,14 @@ internal sealed class ScoreKeeper
         Changed?.Invoke();
     }
 
+    /// <summary>Switches between turning one card off the stock and turning three. Rides
+    /// along with the record for the same reason the mute does.</summary>
+    public void ToggleDrawMode()
+    {
+        Score.DrawMode = Score.DrawMode == DrawMode.DrawThree ? DrawMode.DrawOne : DrawMode.DrawThree;
+        Changed?.Invoke();
+    }
+
     /// <summary>The record in the form the host stores it. What storage that is — a browser's
     /// localStorage, a file, nothing at all — is the host's business and not named here.</summary>
     public string ToJson() => JsonSerializer.Serialize(Score);

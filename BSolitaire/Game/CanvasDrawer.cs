@@ -23,6 +23,10 @@ internal sealed class CanvasDrawer : IGameDrawer
     // reads off a fanned column, and every other size on the card is set around leaving it
     // room. Every number here was checked for clearance rather than eyeballed — the tightest
     // gap between any two marks on any of the fifty-two faces is about 2px at a 110px card.
+    /// <summary>How many of the waste's cards are drawn. Matches the fan the layout lays
+    /// out; the rects themselves still come from the layout.</summary>
+    private const int WasteFanCards = 3;
+
     private const double CornerRadius = 0.075;   // of card width
     private const double IndexAxis = 0.168;       // of card width, in from the near edge
     private const double RankRow = 0.118;        // of card height, in from the near edge
@@ -141,6 +145,8 @@ internal sealed class CanvasDrawer : IGameDrawer
     /// <summary>What the corner controls were last painted saying, so they are only painted
     /// again when one of them has something else to say.</summary>
     private bool cachedMuted;
+
+    private bool cachedDrawThree;
     private bool cachedCanUndo;
     private string cachedScore = "";
 
@@ -319,10 +325,12 @@ internal sealed class CanvasDrawer : IGameDrawer
         // go into the cached board with everything else, and are only redrawn when one of
         // them actually says something different.
         bool chromeChanged =
+            cachedDrawThree != game.DrawThree ||
             cachedMuted != game.Muted ||
             cachedCanUndo != game.CanUndo ||
             cachedScore != game.Score.Summary;
 
+        cachedDrawThree = game.DrawThree;
         cachedMuted = game.Muted;
         cachedCanUndo = game.CanUndo;
         cachedScore = game.Score.Summary;
@@ -640,14 +648,49 @@ internal sealed class CanvasDrawer : IGameDrawer
             return;
         }
 
-        // Only the tableau fans. Every other pile stacks its cards in one slot, so painting
-        // anything below the top card is invisible work.
-        int firstVisible = location.Kind == PileKind.Tableau ? 0 : visibleCount - 1;
+        // The tableau fans the whole column and the waste fans its last few; the stock and
+        // the foundations stack in one slot, where painting anything under the top card is
+        // invisible work.
+        int firstVisible = location.Kind switch
+        {
+            PileKind.Tableau => 0,
+            PileKind.FaceUp => Math.Max(0, visibleCount - WasteFanCards),
+            _ => visibleCount - 1
+        };
 
         for (int indexInPile = firstVisible; indexInPile < visibleCount; indexInPile++)
         {
-            await DrawCard(pile[indexInPile], layout.CardRect(location, indexInPile));
+            // The real count, not the visible one: where a card sits in the waste's fan is
+            // decided by the pile, so a card held or in flight leaves its place empty rather
+            // than sliding the others along to close the gap.
+            await DrawCard(pile[indexInPile], layout.CardRect(location, indexInPile, pile.Count));
         }
+    }
+
+    /// <summary>
+    /// How many cards the stock turns over, as a figure rather than a picture. Both states
+    /// say what they are — a one and a three — because an icon that differs only by what is
+    /// missing is one a player has to have seen the other state of to read.
+    /// </summary>
+    private async ValueTask DrawDrawMode(BoardLayout layout, bool drawThree)
+    {
+        var button = layout.DrawModeButton;
+        double size = button.W;
+
+        await RoundedPath(button, size * 0.22);
+        await Fill("#12351f");
+        await ctx.FillAsync();
+        await LineWidth(1);
+        await Stroke("#cfe0d2");
+        await ctx.StrokeAsync();
+
+        await Fill("#f4f8f4");
+        await Font($"bold {size * 0.52:F0}px sans-serif");
+        await Align("center");
+        await ctx.FillTextAsync(
+            drawThree ? "3" : "1",
+            button.X + size / 2,
+            button.Y + size / 2);
     }
 
     /// <summary>
@@ -735,6 +778,7 @@ internal sealed class CanvasDrawer : IGameDrawer
     {
         await DrawScore(layout, game.Score);
         await DrawMute(layout, game.Muted);
+        await DrawDrawMode(layout, game.DrawThree);
 
         if (game.CanUndo)
         {

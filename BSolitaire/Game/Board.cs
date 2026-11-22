@@ -38,6 +38,13 @@ internal class Board
 
     public Board() => Reset();
 
+    /// <summary>
+    /// How many cards this deal turns off the stock. Per-deal rather than per-position: the
+    /// setting takes effect on the next deal and cannot change partway through one, which is
+    /// also why the snapshot does not carry it — no move can change it, so undo cannot either.
+    /// </summary>
+    public int DrawCount { get; private set; } = 1;
+
     public Position Position { get; } = new();
 
     /// <summary>Recomputed after every move rather than on demand: the answer only changes when
@@ -145,8 +152,11 @@ internal class Board
     /// chosen before it is played — see <see cref="DealVetter"/>, which only hands over deals
     /// a search has found a win in.
     /// </param>
-    public void Reset(IReadOnlyList<(Suit Suit, Rank Rank)>? deal = null)
+    /// <param name="drawCount">How many cards a turn of the stock brings over, for this
+    /// deal and until the next one.</param>
+    public void Reset(IReadOnlyList<(Suit Suit, Rank Rank)>? deal = null, int drawCount = 1)
     {
+        DrawCount = Math.Max(1, drawCount);
         history.Clear();
         Position.Strip();
         Dealer.Deal(Position, deal);
@@ -183,7 +193,7 @@ internal class Board
         // Nothing is playable from where the stock happens to be sitting, so turn it over
         // until the card that is playable comes up. This is the same cycling a player would
         // do by hand, and it terminates for the same reason the finish does.
-        return DealFromStock() || RecycleWaste();
+        return DealOneForTheFinish() || RecycleWaste();
     }
 
     public bool MakeMove(Move move)
@@ -201,12 +211,23 @@ internal class Board
 
             PushUndo();
 
-            var cardsToMove = Position.Take(move.From, move.Count);
-            Position.Place(move.To, cardsToMove);
-
-            // The stock's deal is the one move that turns its card over on the way. Every
+            // The stock's deal is the one move that turns its cards over on the way. Every
             // other card is showing the same face at both ends of the trip.
             bool reveals = move.From.Kind == PileKind.FaceDown;
+
+            var lifted = Position.Take(move.From, move.Count);
+
+            // A packet taken off the stock is turned over as a packet, so it lands in the
+            // order a hand would leave it in: the card that was deepest ends up on top. That
+            // is what makes a draw of three show the third card rather than the first, and
+            // it is also what makes the deck repeat — turning the waste back over after a
+            // pass restores the stock exactly, so the next pass deals the same groups as
+            // this one. Without the turn, every pass deals a different grouping and the
+            // cards a player can reach shift under them for no reason they can see.
+            bool turned = reveals && lifted.Count > 1;
+            var cardsToMove = turned ? lifted.Reverse().ToList() : lifted;
+
+            Position.Place(move.To, cardsToMove);
 
             for (int i = 0; i < cardsToMove.Count; i++)
             {
@@ -214,7 +235,7 @@ internal class Board
                     MotionKind.Move,
                     cardsToMove[i],
                     move.From,
-                    fromIndex + i,
+                    fromIndex + (turned ? cardsToMove.Count - 1 - i : i),
                     move.To,
                     toIndex + i,
                     reveals));
@@ -233,8 +254,13 @@ internal class Board
 
         if (move.From.Kind == PileKind.FaceDown && move.To.Kind == PileKind.FaceUp)
         {
-            var topCard = Position.FaceUpPile[^1];
-            topCard.Flip();
+            // Every card that came over, not only the one on top: a draw of three turns all
+            // three face up, and the two behind the top card are shown in the waste's fan.
+            for (int i = Position.FaceUpPile.Count - move.Count; i < Position.FaceUpPile.Count; i++)
+            {
+                Position.FaceUpPile[i].Flip();
+            }
+
             Play(Sound.Stock);
         }
         else
@@ -279,7 +305,7 @@ internal class Board
         return MakeMove(new Move(
             new Location(PileKind.FaceDown, 0),
             new Location(PileKind.FaceUp, 0),
-            1));
+            Math.Min(DrawCount, Position.FaceDownPile.Count)));
     }
 
     /// <summary>
@@ -312,6 +338,31 @@ internal class Board
         MarkDirty(waste);
         RefreshState();
         return true;
+    }
+
+    /// <summary>
+    /// Turns exactly one card off the stock, whatever the deal's draw count.
+    ///
+    /// The finish uses this rather than <see cref="DealFromStock"/>, and the reason is the
+    /// argument in <see cref="CanFastForward"/>: it holds because the stock recycles without
+    /// limit and so every card in it can be reached. Turning three at a time puts only one
+    /// card of each group on top of the waste, and turning the waste back over reverses the
+    /// grouping rather than repeating it, so "every card can be reached" stops being
+    /// obviously true. Dealing one at a time here keeps the proof exactly as it was. Nothing
+    /// is lost by it: the finish is a formality the player asked to skip, and this is the
+    /// same cycling they would do by hand.
+    /// </summary>
+    private bool DealOneForTheFinish()
+    {
+        if (Position.FaceDownPile.Count == 0)
+        {
+            return false;
+        }
+
+        return MakeMove(new Move(
+            new Location(PileKind.FaceDown, 0),
+            new Location(PileKind.FaceUp, 0),
+            1));
     }
 
     private void Play(Sound sound)
@@ -380,7 +431,7 @@ internal class Board
         {
             if (pile.Count < FoundationSize)
             {
-                State = Rules.IsStuck(Position) ? GameState.Stuck : GameState.Playing;
+                State = Rules.IsStuck(Position, DrawCount) ? GameState.Stuck : GameState.Playing;
                 CanFastForward = State == GameState.Playing && NothingLeftFaceDown();
                 return;
             }

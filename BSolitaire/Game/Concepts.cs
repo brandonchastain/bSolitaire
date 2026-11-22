@@ -21,6 +21,16 @@ internal enum GameState
     Unwinnable
 }
 
+/// <summary>
+/// How many cards a turn of the stock brings over. The classic game is three; one is the
+/// kinder version and the one this game shipped with first.
+/// </summary>
+internal enum DrawMode
+{
+    DrawThree,
+    DrawOne
+}
+
 internal enum PileKind
 {
     FaceDown,

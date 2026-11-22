@@ -127,7 +127,9 @@ internal sealed class Animator
             var motion = motions[i];
             double start = nowMs + (dealing ? i * DealStaggerMs : 0);
             var from = Origin(motion);
-            var to = layout.CardRect(motion.To, motion.ToIndex);
+            // The destination pile already holds the card — a motion describes a move
+            // that has happened — so its count is what the waste's fan is measured from.
+            var to = layout.CardRect(motion.To, motion.ToIndex, board.Position.Pile(motion.To).Count);
 
             // Distance decides how long, within limits. A fixed duration makes a nudge into
             // the next column look laboured and a card going home from the far side look

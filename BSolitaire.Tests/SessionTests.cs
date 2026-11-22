@@ -410,6 +410,42 @@ public class SessionTests
         Assert.Equal(SolveResult.Winnable, solver.Result);
     }
 
+    [Fact]
+    public void ChangingTheDrawTakesEffectOnTheNextDealAndNotThisOne()
+    {
+        // Changing what the stock does under a player who has already started turning it
+        // would be changing the game they are playing. The deal they are on keeps the rules
+        // it was dealt with.
+        var game = Sized();
+        game.Reset();
+
+        Assert.Equal(3, game.Board.DrawCount);
+
+        game.OnKeyDown("KeyD");
+
+        Assert.Equal(3, game.Board.DrawCount);
+        Assert.False(game.DrawThree);
+
+        game.Reset();
+
+        Assert.Equal(1, game.Board.DrawCount);
+    }
+
+    [Fact]
+    public void TheDrawToggleTakesThePressBeforeTheFeltDoes()
+    {
+        var game = Sized();
+        var (x, y) = Centre(game.Layout.DrawModeButton);
+
+        Assert.True(game.DrawThree);
+
+        game.OnPointerDown(x, y);
+        game.OnPointerUp(x, y);
+
+        Assert.False(game.DrawThree);
+        Assert.Null(game.Drag);
+    }
+
     private static (double X, double Y) Centre(Rect rect) => (rect.X + rect.W / 2, rect.Y + rect.H / 2);
 
     /// <summary>A game sized like a real viewport, so the buttons are where the layout puts
