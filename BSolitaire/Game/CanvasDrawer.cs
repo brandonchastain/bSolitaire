@@ -1205,7 +1205,7 @@ internal sealed class CanvasDrawer : IGameDrawer
     private async ValueTask DrawDropTarget(Board board, BoardLayout layout, Location loc)
     {
         var pile = board.Position.Pile(loc);
-        var card = pile.Count > 0 ? layout.CardRect(loc, pile.Count - 1) : layout.EmptySlot(loc);
+        var card = pile.Count > 0 ? layout.CardRect(loc, pile.Count - 1, pile.Count) : layout.EmptySlot(loc);
         double width = Math.Max(2, card.W * 0.035);
 
         // Set inside the card rather than along it. A stroke straddles the path it follows,
@@ -1442,8 +1442,11 @@ internal sealed class CanvasDrawer : IGameDrawer
             return;
         }
 
-        var first = layout.CardRect(loc, index);
-        var last = layout.CardRect(loc, pile.Count - 1);
+        // With the pile's length, not without it: the waste's fan is anchored to the end of
+        // the pile, so a rect asked for without it comes back at the fan's first place —
+        // which is where the buried card sits, not the one being pointed at.
+        var first = layout.CardRect(loc, index, pile.Count);
+        var last = layout.CardRect(loc, pile.Count - 1, pile.Count);
         var span = new Rect(first.X, first.Y, first.W, last.Y + last.H - first.Y);
 
         // Outline only. A translucent wash over the run was the other option and is

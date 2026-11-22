@@ -135,7 +135,10 @@ internal sealed class PointerInput
         // The selection deliberately survives this. A press is also how a tap starts, and
         // the second tap of a two-tap move lands on a pile that can usually be grabbed from
         // — clearing here left that move unreachable for every pile holding a card.
-        var rect = layout.CardRect(loc, indexInPile);
+        // The pile's length matters to the waste, whose fan is anchored to its end: without
+        // it the offset is measured from the wrong card and the stack jumps on being picked
+        // up.
+        var rect = layout.CardRect(loc, indexInPile, board.Position.Pile(loc).Count);
         drag = new DragState
         {
             From = loc,

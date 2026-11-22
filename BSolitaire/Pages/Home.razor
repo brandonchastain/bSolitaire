@@ -24,6 +24,23 @@
     </div>
 }
 
+@if (game.WantsDrawChange)
+{
+    @* The same plain DOM overlay as the nickname, and for the same reason: the board is a
+       canvas, and a question with buttons on it has to be real markup to be reachable by a
+       keyboard or a screen reader. *@
+    <div id="drawchange">
+        <div class="panel">
+            <p>@(game.DrawThree ? "Turn one card off the stock instead of three?" : "Turn three cards off the stock instead of one?")</p>
+            <p class="note">The deal you are on keeps its own rules, so this starts a new game.</p>
+            <div class="buttons">
+                <button type="button" autofocus @onclick="ConfirmDrawChange">New game</button>
+                <button type="button" class="quiet" @onclick="CancelDrawChange">Keep playing</button>
+            </div>
+        </div>
+    </div>
+}
+
 @* The board is redrawn into this off-screen canvas only when the position changes, and
    blitted from it every frame. It is never shown. *@
 <div id="cache" style="position: absolute; left: -99999px; top: 0; visibility: hidden;">
@@ -75,16 +92,29 @@
             atlasRef.CanvasReference);
         selfRef = DotNetObjectReference.Create(this);
 
+        // The record first, because it says how many cards the stock turns over, and a deal
+        // made before it loads is a deal made under rules the player did not choose — which
+        // is how the setting came to look broken: the board kept the default while the
+        // button on the felt showed what had been loaded a moment later.
+        //
+        // A record that will not load still costs the player only their history and never
+        // their game. That used to be arranged by starting the loop first; it is arranged
+        // here instead, which says it directly and does not decide the deal's rules for it.
+        try
+        {
+            await LoadScore();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Could not read the stored record");
+        }
+
         // Before the loop rather than after it, so the first thing drawn is already the deal
         // the player keeps. The board deals itself when it is built, and that one is a
         // placeholder nobody should see.
         game.Begin();
 
         await JS.InvokeVoidAsync("bSolitaire.start", selfRef);
-
-        // After the loop is running, not before: a score that fails to load costs the
-        // player their record, but it must never cost them the game.
-        await LoadScore();
     }
 
     /// <summary>
@@ -126,6 +156,16 @@
             if (game.WantsNickname && !nicknameAsked)
             {
                 AskNickname();
+            }
+
+            // The game sets this from a button on the felt, which Blazor knows nothing
+            // about, so the overlay has to be noticed from the frame loop the way the
+            // nickname is. Only on the change, or this would re-render sixty times a second.
+            if (game.WantsDrawChange != drawChangeShown)
+            {
+                drawChangeShown = game.WantsDrawChange;
+                overlayDirty = true;
+                StateHasChanged();
             }
 
             PlaySounds();
@@ -202,6 +242,20 @@
         }
 
         game.ScoreChanged += SaveScore;
+    }
+
+    private void ConfirmDrawChange()
+    {
+        game.ConfirmDrawChange();
+        overlayDirty = true;
+        StateHasChanged();
+    }
+
+    private void CancelDrawChange()
+    {
+        game.CancelDrawChange();
+        overlayDirty = true;
+        StateHasChanged();
     }
 
     private void AskNickname()
@@ -286,6 +340,8 @@
     // Asked at most once a session, so dismissing the field with an empty name doesn't
     // put it straight back up on the next frame.
     private bool nicknameAsked;
+
+    private bool drawChangeShown;
     private bool overlayDirty;
 
     // What JS was last told, so the setting is pushed on change rather than every frame.

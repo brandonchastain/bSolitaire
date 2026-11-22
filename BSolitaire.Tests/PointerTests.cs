@@ -370,6 +370,35 @@ public class PointerTests
     }
 
     /// <summary>A press and release without travel.</summary>
+    [Fact]
+    public void TheTopOfTheWasteFanIsGrabbedWhereItIsDrawn()
+    {
+        // The waste's fan is anchored to the end of the pile, so a rect asked for without
+        // the pile's length comes back at the fan's first place — where the buried card is.
+        // Four call sites were doing that, and the defaulted parameter let every one of them
+        // compile. This is the one a player feels: the stack leaping sideways on pick-up.
+        var (board, layout, input) = Table();
+
+        board.Position.Place(Waste, Up(Suit.Hearts, Rank.Two));
+        board.Position.Place(Waste, Up(Suit.Spades, Rank.Three));
+        board.Position.Place(Waste, Up(Suit.Clubs, Rank.Four));
+
+        var top = layout.CardRect(Waste, 2, 3);
+        double x = top.X + top.W / 2;
+        double y = top.Y + top.H / 2;
+
+        input.Down(x, y);
+        input.Move(x + 40, y + 40);
+
+        Assert.NotNull(input.Drag);
+        Assert.Equal(Waste, input.Drag!.From);
+        Assert.Equal(2, input.Drag.Index);
+
+        // Measured from the card under the pointer, so half a card across and half down.
+        Assert.Equal(top.W / 2, input.Drag.OffsetX, 1);
+        Assert.Equal(top.H / 2, input.Drag.OffsetY, 1);
+    }
+
     private static void Tap(PointerInput input, (double X, double Y) at)
     {
         input.Down(at.X, at.Y);
